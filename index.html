@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Thread" />
+<meta name="theme-color" content="#0f1115" />
+<title>Thread</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f1115'/%3E%3Cpath d='M30 26 v48 M50 18 v64 M70 26 v48' stroke='%237aa2ff' stroke-width='7' stroke-linecap='round'/%3E%3C/svg%3E" />
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f1115'/%3E%3Cpath d='M30 26 v48 M50 18 v64 M70 26 v48' stroke='%237aa2ff' stroke-width='7' stroke-linecap='round'/%3E%3C/svg%3E" />
+<link rel="manifest" href="data:application/json,%7B%22name%22%3A%22Thread%22%2C%22short_name%22%3A%22Thread%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230f1115%22%2C%22theme_color%22%3A%22%230f1115%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%253D%2527http%253A%252F%252Fwww.w3.org%252F2000%252Fsvg%2527%2520viewBox%253D%25270%25200%2520100%2520100%2527%253E%253Crect%2520width%253D%2527100%2527%2520height%253D%2527100%2527%2520rx%253D%252722%2527%2520fill%253D%2527%25230f1115%2527%252F%253E%253Cpath%2520d%253D%2527M30%252026%2520v48%2520M50%252018%2520v64%2520M70%252026%2520v48%2527%2520stroke%253D%2527%25237aa2ff%2527%2520stroke-width%253D%25277%2527%2520stroke-linecap%253D%2527round%2527%252F%253E%253C%252Fsvg%253E%22%2C%22sizes%22%3A%22any%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%2C%22purpose%22%3A%22any%22%7D%5D%7D" />
+<style>
+  :root{
+    --bg:#0f1115; --surface:#171a21; --surface2:#1f2430; --line:#2a3040;
+    --text:#e6e9ef; --muted:#8b94a7; --faint:#5c6577;
+    --accent:#7aa2ff; --accent-dim:#2d3a5c;
+    --good:#5ec98a; --warn:#e0b65a; --bad:#e07a7a; --park:#b58be0;
+    --radius:14px; --tap:44px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    background:var(--bg); color:var(--text);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; overscroll-behavior-y:none;
+  }
+  #app{max-width:680px; margin:0 auto; padding:env(safe-area-inset-top) 0 0;}
+  header{
+    position:sticky; top:0; z-index:20; background:rgba(15,17,21,.9);
+    backdrop-filter:blur(10px); border-bottom:1px solid var(--line);
+    padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;
+    display:flex; align-items:center; gap:10px;
+  }
+  header h1{font-size:16px; margin:0; font-weight:600; letter-spacing:.2px;}
+  header .sub{color:var(--muted); font-size:12px; margin-left:auto; text-align:right;}
+  main{padding:14px 16px 96px; min-height:60vh;}
+  h2{font-size:13px; text-transform:uppercase; letter-spacing:.8px; color:var(--muted); margin:22px 0 10px; font-weight:600;}
+  h2:first-child{margin-top:4px;}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:14px; margin-bottom:10px;}
+  .card.tap{cursor:pointer; transition:border-color .15s,background .15s;}
+  .card.tap:active{background:var(--surface2);}
+  .row{display:flex; align-items:center; gap:10px;}
+  .col{display:flex; flex-direction:column; gap:8px;}
+  .grow{flex:1; min-width:0;}
+  .muted{color:var(--muted);} .faint{color:var(--faint);} .sm{font-size:12px;}
+  .truncate{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .pill{display:inline-flex; align-items:center; gap:5px; font-size:11px; padding:3px 8px; border-radius:999px; background:var(--surface2); color:var(--muted); border:1px solid var(--line); white-space:nowrap;}
+  .pill.active{color:var(--accent); border-color:var(--accent-dim);}
+  .pill.sorted{color:var(--good);} .pill.killed{color:var(--bad);} .pill.parked{color:var(--park);}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;}
+  .dot.sorted{background:var(--good);} .dot.killed{background:var(--bad);} .dot.parked{background:var(--park);}
+  textarea,input,select{
+    width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--line);
+    border-radius:10px; padding:11px 12px; font:inherit; resize:vertical;
+  }
+  textarea:focus,input:focus,select:focus{outline:none; border-color:var(--accent);}
+  label.fld{display:block; font-size:12px; color:var(--muted); margin:10px 0 5px;}
+  button{font:inherit; cursor:pointer; border:none; border-radius:10px; padding:11px 14px; min-height:var(--tap); background:var(--surface2); color:var(--text); border:1px solid var(--line);}
+  button:active{transform:scale(.985);}
+  button.primary{background:var(--accent); color:#0b1020; border-color:transparent; font-weight:600;}
+  button.ghost{background:transparent;}
+  button.sm{min-height:36px; padding:7px 11px; font-size:13px;}
+  button.danger{color:var(--bad); border-color:#4a2b2b;}
+  .btnrow{display:flex; gap:8px; flex-wrap:wrap;}
+  .seg{display:flex; gap:6px; background:var(--surface2); padding:4px; border-radius:12px; border:1px solid var(--line);}
+  .seg button{flex:1; background:transparent; border:none; min-height:38px; color:var(--muted); border-radius:8px;}
+  .seg button.on{background:var(--accent); color:#0b1020; font-weight:600;}
+  .chips{display:flex; gap:6px; flex-wrap:wrap;}
+  .chip{font-size:12px; padding:6px 10px; border-radius:999px; background:var(--surface2); border:1px solid var(--line); color:var(--muted);}
+  .chip.on{color:var(--accent); border-color:var(--accent-dim); background:var(--accent-dim);}
+  .empty{text-align:center; color:var(--faint); padding:40px 16px; font-size:14px;}
+  .empty .big{font-size:30px; margin-bottom:10px; opacity:.6;}
+  /* bottom nav */
+  nav{position:fixed; bottom:0; left:0; right:0; z-index:30; background:rgba(15,17,21,.94); backdrop-filter:blur(12px); border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom);}
+  nav .inner{max-width:680px; margin:0 auto; display:flex;}
+  nav button{flex:1; background:transparent; border:none; min-height:58px; color:var(--faint); display:flex; flex-direction:column; align-items:center; gap:3px; font-size:10px; border-radius:0;}
+  nav button .ic{font-size:19px; line-height:1;}
+  nav button.on{color:var(--accent);}
+  /* modal */
+  .scrim{position:fixed; inset:0; z-index:50; background:rgba(0,0,0,.55); display:flex; align-items:flex-end; justify-content:center;}
+  .sheet{background:var(--surface); width:100%; max-width:680px; max-height:92vh; overflow:auto; border-radius:18px 18px 0 0; border:1px solid var(--line); padding:18px 16px calc(env(safe-area-inset-bottom) + 18px);}
+  .sheet h3{margin:0 0 4px; font-size:18px;}
+  .sheet .grip{width:38px; height:4px; border-radius:2px; background:var(--line); margin:0 auto 14px;}
+  /* toast */
+  #toast{position:fixed; bottom:78px; left:50%; transform:translateX(-50%); z-index:80; background:#222a38; color:var(--text); border:1px solid var(--line); padding:10px 16px; border-radius:999px; font-size:13px; opacity:0; transition:opacity .2s, transform .2s; pointer-events:none; max-width:90%;}
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(-4px);}
+  .turn{border-left:2px solid var(--accent-dim); padding:2px 0 2px 12px; margin:12px 0;}
+  .turn .q{color:var(--accent); font-weight:500;}
+  .turn .a{margin-top:6px; white-space:pre-wrap;}
+  .frag{padding:10px 0; border-bottom:1px solid var(--line);}
+  .frag:last-child{border-bottom:none;}
+  .frag .body{white-space:pre-wrap;}
+  .warnbar{background:#332b1a; border:1px solid #5a4a2a; color:var(--warn); border-radius:10px; padding:9px 12px; font-size:12px; margin-bottom:12px;}
+  a{color:var(--accent);}
+  pre.export{white-space:pre-wrap; word-break:break-word; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px; font-size:12px; max-height:40vh; overflow:auto;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1 id="hTitle">Thread</h1>
+    <div class="sub" id="hSub"></div>
+  </header>
+  <main id="main"></main>
+</div>
+<nav><div class="inner" id="nav"></div></nav>
+<div id="modalRoot"></div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   Thread — single-file thinking-continuity PWA
+   Three layers: Global (models + life goals) → Projects (goal + role) → Threads
+   Storage: localStorage (one JSON blob). Backup via JSON export/import.
+   ============================================================ */
+
+const KEY = "thread.v1";
+const DOMAINS = [
+  ["work","Work"],
+  ["family-parenting","Parenting"],
+  ["family-finance","Finance"],
+  ["skill","Skill"],
+  ["personal","Personal"],
+];
+const FRAG_TYPES = ["event","decision","observation","relationship","metric","question","feeling"];
+const DEPTHS = {1:"surface",2:"exploring",3:"deciding",4:"committed"};
+
+/* ---------- state ---------- */
+let S = load();
+let UI = { tab:"capture", threadId:null, projectId:null, captureMode:"just_log" };
+
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(raw) return migrate(JSON.parse(raw));
+  }catch(e){ console.warn("load failed",e); }
+  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], meta:{lastBackup:0} };
+}
+function migrate(s){
+  s.global = s.global || {models:[],goals:[]};
+  s.global.models = s.global.models || []; s.global.goals = s.global.goals || [];
+  s.projects = s.projects||[]; s.threads=s.threads||[]; s.fragments=s.fragments||[]; s.turns=s.turns||[];
+  s.meta = s.meta||{lastBackup:0};
+  return s;
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){ toast("⚠️ Save failed — storage full?"); } }
+function uid(){ return Math.random().toString(36).slice(2,9)+(S.fragments.length+S.threads.length+S.turns.length); }
+function now(){ return Date.now(); }
+
+/* ---------- helpers ---------- */
+const el = id => document.getElementById(id);
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function domainLabel(d){ const m=DOMAINS.find(x=>x[0]===d); return m?m[1]:(d||"—"); }
+function project(id){ return S.projects.find(p=>p.id===id); }
+function thread(id){ return S.threads.find(t=>t.id===id); }
+function threadFragments(id){ return S.fragments.filter(f=>f.threadId===id).sort((a,b)=>a.createdAt-b.createdAt); }
+function threadTurns(id){ return S.turns.filter(t=>t.threadId===id).sort((a,b)=>a.createdAt-b.createdAt); }
+function activeThreads(){ return S.threads.filter(t=>t.status==="active"); }
+function fmtDate(ts){ if(!ts) return ""; const d=new Date(ts); return d.toLocaleDateString(undefined,{month:"short",day:"numeric"}); }
+function daysAgo(ts){ if(!ts) return 0; return Math.floor((now()-ts)/86400000); }
+function ago(ts){ const d=daysAgo(ts); if(d===0)return"today"; if(d===1)return"1d ago"; return d+"d ago"; }
+
+function toast(msg){ const t=el("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2200); }
+async function copy(text){
+  try{ await navigator.clipboard.writeText(text); toast("📋 Copied — paste into Claude"); }
+  catch(e){ showCopyFallback(text); }
+}
+function showCopyFallback(text){
+  openSheet("Copy this", `<p class="muted sm">Tap and hold to select, then copy:</p><pre class="export">${esc(text)}</pre><div class="btnrow"><button class="primary grow" data-act="closeSheet">Done</button></div>`);
+}
+
+/* ============================================================
+   CLAUDE PROMPT BUILDERS — the heart of Phase 1
+   ============================================================ */
+function globalBlock(){
+  const goals = S.global.goals.length ? S.global.goals.map((g,i)=>`  ${i+1}. ${g}`).join("\n") : "  (none recorded yet)";
+  const models = S.global.models.length ? S.global.models.map(m=>`  - ${m}`).join("\n") : "  (none recorded yet)";
+  return `## MY GLOBAL FRAME\nUltimate life goals (the fixed reference everything must serve):\n${goals}\n\nThinking models / principles I try to reason by:\n${models}`;
+}
+function projectBlock(p){
+  if(!p) return "## PROJECT\n  (this thread isn't linked to a project)";
+  return `## PROJECT: ${p.name} [${domainLabel(p.domain)}]\nGoal: ${p.goal||"(not set)"}\nMy role in it: ${p.role||"(not set)"}`;
+}
+function siblingProjectsBlock(exceptId){
+  const others = S.projects.filter(p=>p.id!==exceptId);
+  if(!others.length) return "## OTHER PROJECTS (must coexist without conflict)\n  (none)";
+  return "## OTHER PROJECTS (my decisions here must coexist with these)\n" +
+    others.map(p=>`  - ${p.name} [${domainLabel(p.domain)}] — goal: ${p.goal||"?"}; my role: ${p.role||"?"}`).join("\n");
+}
+function threadHistoryBlock(t){
+  const frags = threadFragments(t.id);
+  const turns = threadTurns(t.id);
+  const fragTxt = frags.length ? frags.map(f=>`  [${fmtDate(f.createdAt)}${f.type?", "+f.type:""}] ${f.body}`).join("\n") : "  (no fragments yet)";
+  const turnTxt = turns.length ? turns.map(t2=>`  Q: ${t2.question}\n  A: ${t2.answer||"(unanswered)"}`).join("\n\n") : "  (no prior Q&A)";
+  return `## THREAD: ${t.title}\nDomain: ${domainLabel(t.domain)} | depth: ${t.depthLevel} (${DEPTHS[t.depthLevel]}) | opened ${ago(t.openedAt)}\n\nFragments fed into it (oldest→newest):\n${fragTxt}\n\nPrior Q&A on this thread:\n${turnTxt}`;
+}
+function questionPrompt(t){
+  const p = project(t.projectId);
+  return `You are my thinking partner. Your job is NOT to summarize. Read everything below, then output EXACTLY ONE question — the single most useful question to advance my thinking on this thread right now.
+
+${globalBlock()}
+
+${projectBlock(p)}
+
+${siblingProjectsBlock(t.projectId)}
+
+${threadHistoryBlock(t)}
+
+## HOW TO CHOOSE THE QUESTION (priority order)
+1. Contradiction: current state conflicts with something I said earlier in this thread → name both, ask which holds.
+2. Coexistence conflict: this thread's likely direction clashes with another project's goal/role above → surface it.
+3. Vertical drift: this thread is drifting from my global life goals → ask the question that re-tests alignment.
+4. Pattern: my reasoning repeats a past approach that didn't work → ask what's different now.
+5. Missing axis: I've only explored one dimension → ask about the unexamined one (e.g. cost of NOT doing it).
+6. Depth probe: I've been "exploring" too long → "What would have to be true for you to decide today?"
+7. Action gap: many observations, no decision → "What decision is this thread waiting for?"
+
+## RULES
+- Output ONE question only. No preamble, no summary, no list.
+- It MUST reference something specific above (a prior entry, a stated value, or a named project). No generic questions.
+- End with one line: "Not the right question? Because ___" so I can redirect you.`;
+}
+function coherencePrompt(){
+  const projTxt = S.projects.length ? S.projects.map(p=>`  - ${p.name} [${domainLabel(p.domain)}] — goal: ${p.goal||"?"}; my role: ${p.role||"?"}`).join("\n") : "  (no projects yet)";
+  const actives = activeThreads();
+  const threadTxt = actives.length ? actives.map(t=>{
+    const p=project(t.projectId);
+    const last = threadFragments(t.id).slice(-2).map(f=>f.body).join(" / ") || "(no fragments)";
+    return `  - "${t.title}" [${p?p.name:"no project"} / ${domainLabel(t.domain)}, depth ${t.depthLevel}, ${ago(t.lastActivityAt)}]\n      recent: ${last}`;
+  }).join("\n") : "  (no active threads)";
+  return `You are auditing the COHERENCE of my life across projects. Two axes:
+ • VERTICAL — does each project / active thread still serve my global life goals?
+ • HORIZONTAL — do my projects coexist, or are any pulling against each other (time, money, energy, values)?
+
+${globalBlock()}
+
+## MY PROJECTS
+${projTxt}
+
+## MY ACTIVE THREADS (live decisions in flight)
+${threadTxt}
+
+## OUTPUT
+1. CONFLICTS — pairs of projects/threads that compete or contradict. For each: what's the tension, and the sharpest question to resolve it.
+2. DRIFT — any project/thread whose recent direction no longer serves a stated life goal. Name the goal it's drifting from.
+3. BLIND SPOT — the one thing I'm likely avoiding because it's uncomfortable.
+Be specific and reference items by name. Prioritize: lead with the single most important issue.`;
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+const NAV = [
+  ["capture","✎","Capture"],
+  ["threads","≡","Threads"],
+  ["projects","◳","Projects"],
+  ["global","◎","Global"],
+];
+function render(){
+  // header
+  const titles = {capture:"Capture",threads:"Threads",projects:"Projects",global:"Global frame",thread:"Thread",project:"Project"};
+  el("hTitle").textContent = titles[UI.tab]||"Thread";
+  const n = activeThreads().length;
+  el("hSub").innerHTML = `${n} active thread${n===1?"":"s"}` + backupNudge();
+  // body
+  let html="";
+  if(UI.tab==="capture") html=viewCapture();
+  else if(UI.tab==="threads") html=viewThreads();
+  else if(UI.tab==="projects") html=viewProjects();
+  else if(UI.tab==="global") html=viewGlobal();
+  else if(UI.tab==="thread") html=viewThread();
+  el("main").innerHTML = html;
+  // nav
+  el("nav").innerHTML = NAV.map(([k,ic,lbl])=>{
+    const on = (UI.tab===k || (UI.tab==="thread"&&k==="threads")) ? "on":"";
+    return `<button class="${on}" data-tab="${k}"><span class="ic">${ic}</span>${lbl}</button>`;
+  }).join("");
+}
+function backupNudge(){
+  const d = daysAgo(S.meta.lastBackup||0);
+  if(S.fragments.length>0 && (!S.meta.lastBackup || d>=7))
+    return ` · <span style="color:var(--warn)">backup due</span>`;
+  return "";
+}
+
+/* ---------- CAPTURE ---------- */
+function viewCapture(){
+  const threadOpts = activeThreads().map(t=>`<option value="${t.id}">${esc(t.title)}</option>`).join("");
+  return `
+  <h2>New fragment</h2>
+  <div class="card">
+    <textarea id="capBody" rows="4" placeholder="What just happened, what you're thinking, an observation…" autofocus></textarea>
+    <div class="seg" style="margin-top:12px">
+      <button class="${UI.captureMode==='just_log'?'on':''}" data-act="capMode" data-v="just_log">Just log</button>
+      <button class="${UI.captureMode==='engage_ai'?'on':''}" data-act="capMode" data-v="engage_ai">Engage AI</button>
+    </div>
+    <p class="muted sm" style="margin:8px 2px 0">${UI.captureMode==='just_log'
+      ? "Stored, no question. For tired moments."
+      : "On save, I build a one-question prompt for you to paste into Claude."}</p>
+
+    <details style="margin-top:12px">
+      <summary class="muted sm" style="cursor:pointer">Optional: thread, type, fatigue</summary>
+      <label class="fld">Attach to thread</label>
+      <select id="capThread"><option value="">— unassigned —</option>${threadOpts}</select>
+      <label class="fld">Type</label>
+      <select id="capType"><option value="">—</option>${FRAG_TYPES.map(t=>`<option value="${t}">${t}</option>`).join("")}</select>
+      <label class="fld">Fatigue (calibrates question depth)</label>
+      <div class="chips" id="capFatigue">
+        ${[1,2,3].map(n=>`<button class="chip" data-act="fatigue" data-v="${n}">${["fresh","ok","fried"][n-1]}</button>`).join("")}
+      </div>
+    </details>
+
+    <div class="btnrow" style="margin-top:14px">
+      <button class="primary grow" data-act="saveFragment">Save fragment</button>
+    </div>
+  </div>
+
+  ${recentFragments()}
+  `;
+}
+let capFatigue = 0;
+function recentFragments(){
+  const recent = [...S.fragments].sort((a,b)=>b.createdAt-a.createdAt).slice(0,6);
+  if(!recent.length) return `<div class="empty"><div class="big">✎</div>Capture a fragment to start.<br>It can join a thread now or later.</div>`;
+  return `<h2>Recent</h2>` + recent.map(f=>{
+    const t = thread(f.threadId);
+    return `<div class="card">
+      <div class="frag" style="border:none;padding:0">
+        <div class="body">${esc(f.body)}</div>
+        <div class="row sm muted" style="margin-top:8px;gap:8px;flex-wrap:wrap">
+          <span>${ago(f.createdAt)}</span>
+          ${f.type?`<span class="pill">${f.type}</span>`:""}
+          ${t?`<span class="pill active" data-act="openThread" data-id="${t.id}">↳ ${esc(t.title)}</span>`
+              :`<button class="sm ghost" data-act="assignFragment" data-id="${f.id}">+ thread</button>`}
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+/* ---------- THREADS ---------- */
+let threadFilter = "active";
+function viewThreads(){
+  const filters = [["active","Active"],["sorted","Sorted"],["parked","Parked"],["killed","Killed"],["all","All"]];
+  const list = S.threads
+    .filter(t=>threadFilter==="all"?true:t.status===threadFilter)
+    .sort((a,b)=>b.lastActivityAt-a.lastActivityAt);
+  const seg = `<div class="seg" style="margin-bottom:12px">${filters.map(([k,l])=>`<button class="${threadFilter===k?'on':''}" data-act="threadFilter" data-v="${k}">${l}</button>`).join("")}</div>`;
+  const coherence = S.projects.length>1 ? `<button class="ghost grow" data-act="coherence">◇ Coherence check</button>` : "";
+  let body;
+  if(!list.length){
+    body = `<div class="empty"><div class="big">≡</div>No ${threadFilter==="all"?"":threadFilter+" "}threads.</div>`;
+  } else {
+    body = list.map(t=>{
+      const p=project(t.projectId);
+      const nf=threadFragments(t.id).length, nt=threadTurns(t.id).length;
+      const stale = t.status==="active" && daysAgo(t.lastActivityAt)>=7;
+      return `<div class="card tap" data-act="openThread" data-id="${t.id}">
+        <div class="row">
+          <span class="dot ${t.status}"></span>
+          <div class="grow"><div class="truncate" style="font-weight:500">${esc(t.title)}</div>
+          <div class="sm muted truncate">${p?esc(p.name)+" · ":""}${domainLabel(t.domain)} · depth ${t.depthLevel}</div></div>
+          ${stale?`<span class="pill" style="color:var(--warn)">${daysAgo(t.lastActivityAt)}d</span>`:`<span class="sm faint">${ago(t.lastActivityAt)}</span>`}
+        </div>
+        <div class="sm muted" style="margin-top:8px">${nf} fragment${nf===1?"":"s"} · ${nt} Q&amp;A</div>
+      </div>`;
+    }).join("");
+  }
+  return `<div class="btnrow" style="margin-bottom:12px"><button class="primary grow" data-act="newThread">+ New thread</button>${coherence}</div>${seg}${body}`;
+}
+
+/* ---------- THREAD DETAIL ---------- */
+function viewThread(){
+  const t = thread(UI.threadId);
+  if(!t){ UI.tab="threads"; return viewThreads(); }
+  const p = project(t.projectId);
+  const frags = threadFragments(t.id);
+  const turns = threadTurns(t.id);
+  const sorted = t.status!=="active";
+
+  let outcome="";
+  if(sorted && t.outcome){
+    const o=t.outcome;
+    outcome = `<div class="card" style="border-color:var(--accent-dim)">
+      <div class="row"><span class="pill ${t.status}">${o.type}</span><span class="sm muted grow">${o.deadline?("by "+fmtDate(o.deadline)):""}${o.wakeTrigger?("wake: "+esc(o.wakeTrigger)):""}</span></div>
+      <div style="margin-top:8px">${esc(o.content)}</div>
+      ${o.reasoning?`<div class="sm muted" style="margin-top:8px">reasoning then: ${esc(o.reasoning)}</div>`:""}
+    </div>`;
+  }
+
+  const fragHtml = frags.length ? frags.map(f=>`<div class="frag"><div class="body">${esc(f.body)}</div><div class="sm faint" style="margin-top:5px">${fmtDate(f.createdAt)}${f.type?" · "+f.type:""}</div></div>`).join("") : `<div class="muted sm">No fragments yet.</div>`;
+  const turnHtml = turns.length ? turns.map(tn=>`<div class="turn"><div class="q">Q: ${esc(tn.question)}</div>${tn.answer?`<div class="a">${esc(tn.answer)}</div>`:`<button class="sm ghost" data-act="answerTurn" data-id="${tn.id}" style="margin-top:6px">+ answer</button>`}</div>`).join("") : `<div class="muted sm">No Q&amp;A yet. Use “Question prompt” → paste into Claude → record the question + your answer.</div>`;
+
+  return `
+  <div class="row" style="margin-bottom:6px">
+    <button class="sm ghost" data-tab="threads">‹ Threads</button>
+    <span class="grow"></span>
+    <span class="pill ${t.status}">${t.status}</span>
+  </div>
+  <h2 style="margin-top:6px">${esc(t.title)}</h2>
+  <div class="card">
+    <div class="row sm muted" style="flex-wrap:wrap;gap:8px">
+      <span class="pill">${domainLabel(t.domain)}</span>
+      ${p?`<span class="pill active" data-act="openProject" data-id="${p.id}">${esc(p.name)}</span>`:`<button class="sm ghost" data-act="linkProject" data-id="${t.id}">+ link project</button>`}
+      <span>depth: <select data-act="setDepth" data-id="${t.id}" style="width:auto;display:inline-block;padding:4px 6px">${Object.entries(DEPTHS).map(([k,v])=>`<option value="${k}" ${+k===t.depthLevel?"selected":""}>${k} ${v}</option>`).join("")}</select></span>
+    </div>
+    ${p&&p.goal?`<div class="sm muted" style="margin-top:10px">serves: <span style="color:var(--text)">${esc(p.goal)}</span></div>`:""}
+  </div>
+
+  ${outcome}
+
+  <div class="btnrow">
+    <button class="primary grow" data-act="questionPrompt" data-id="${t.id}">◆ Question prompt → Claude</button>
+    <button class="grow" data-act="addFragmentTo" data-id="${t.id}">+ Fragment</button>
+    <button class="grow" data-act="recordTurn" data-id="${t.id}">+ Record Q&amp;A</button>
+  </div>
+  ${sorted?`<div class="btnrow" style="margin-top:8px"><button class="ghost grow" data-act="reopen" data-id="${t.id}">Reopen thread</button></div>`
+          :`<div class="btnrow" style="margin-top:8px"><button class="ghost grow" data-act="sortThread" data-id="${t.id}">Sort this thread (close)</button></div>`}
+
+  <h2>Fragments</h2><div class="card">${fragHtml}</div>
+  <h2>Q&amp;A turns</h2><div class="card">${turnHtml}</div>
+  <div class="btnrow" style="margin-top:16px"><button class="danger grow" data-act="deleteThread" data-id="${t.id}">Delete thread</button></div>
+  `;
+}
+
+/* ---------- PROJECTS ---------- */
+function viewProjects(){
+  if(UI.tab==="project") return viewProject();
+  if(!S.projects.length) return `<button class="primary" data-act="newProject" style="width:100%">+ New project</button><div class="empty"><div class="big">◳</div>Projects hold a goal and your role.<br>Threads link to them so decisions stay aligned.</div>`;
+  const list = S.projects.map(p=>{
+    const n=S.threads.filter(t=>t.projectId===p.id&&t.status==="active").length;
+    return `<div class="card tap" data-act="openProject" data-id="${p.id}">
+      <div class="row"><div class="grow"><div style="font-weight:500">${esc(p.name)}</div><div class="sm muted">${domainLabel(p.domain)} · ${n} active thread${n===1?"":"s"}</div></div></div>
+      ${p.goal?`<div class="sm muted" style="margin-top:8px">${esc(p.goal)}</div>`:`<div class="sm faint" style="margin-top:8px">no goal set</div>`}
+    </div>`;
+  }).join("");
+  return `<button class="primary" data-act="newProject" style="width:100%;margin-bottom:12px">+ New project</button>${list}`;
+}
+function viewProject(){
+  const p = project(UI.projectId);
+  if(!p){ UI.tab="projects"; return viewProjects(); }
+  const threads = S.threads.filter(t=>t.projectId===p.id).sort((a,b)=>b.lastActivityAt-a.lastActivityAt);
+  const tHtml = threads.length ? threads.map(t=>`<div class="card tap" data-act="openThread" data-id="${t.id}"><div class="row"><span class="dot ${t.status}"></span><span class="grow truncate">${esc(t.title)}</span><span class="sm faint">${t.status}</span></div></div>`).join("") : `<div class="muted sm">No threads in this project yet.</div>`;
+  return `
+  <div class="row" style="margin-bottom:6px"><button class="sm ghost" data-tab="projects">‹ Projects</button></div>
+  <h2 style="margin-top:6px">${esc(p.name)}</h2>
+  <div class="card">
+    <span class="pill">${domainLabel(p.domain)}</span>
+    <label class="fld">Goal (its north star)</label><div>${p.goal?esc(p.goal):'<span class="faint">—</span>'}</div>
+    <label class="fld">My role in it</label><div>${p.role?esc(p.role):'<span class="faint">—</span>'}</div>
+    <div class="btnrow" style="margin-top:12px"><button class="sm ghost" data-act="editProject" data-id="${p.id}">Edit</button><button class="sm danger" data-act="deleteProject" data-id="${p.id}">Delete</button></div>
+  </div>
+  <h2>Threads</h2>${tHtml}
+  `;
+}
+
+/* ---------- GLOBAL ---------- */
+function viewGlobal(){
+  const goals = S.global.goals.length ? S.global.goals.map((g,i)=>`<div class="card"><div class="row"><span class="grow">${esc(g)}</span><button class="sm ghost" data-act="delGoal" data-i="${i}">✕</button></div></div>`).join("") : `<div class="muted sm">No life goals yet — these are the fixed frame every project must serve.</div>`;
+  const models = S.global.models.length ? S.global.models.map((m,i)=>`<div class="card"><div class="row"><span class="grow">${esc(m)}</span><button class="sm ghost" data-act="delModel" data-i="${i}">✕</button></div></div>`).join("") : `<div class="muted sm">No thinking models yet — e.g. “invert”, “margin of safety”, “opportunity cost”.</div>`;
+  return `
+  <h2>Ultimate life goals</h2>${goals}
+  <button class="ghost" data-act="addGoal" style="width:100%;margin-top:4px">+ Add life goal</button>
+  <h2>Thinking models</h2>${models}
+  <button class="ghost" data-act="addModel" style="width:100%;margin-top:4px">+ Add thinking model</button>
+  <h2>Data</h2>
+  <div class="card">
+    <div class="sm muted">Everything lives on this device only. Back up regularly — and after installing to your home screen, the data is protected from auto-cleanup.</div>
+    <div class="btnrow" style="margin-top:12px">
+      <button class="grow" data-act="export">⤓ Backup (download JSON)</button>
+      <button class="grow ghost" data-act="import">⤒ Restore</button>
+    </div>
+    <div class="sm faint" style="margin-top:8px">Last backup: ${S.meta.lastBackup?ago(S.meta.lastBackup):"never"}</div>
+  </div>
+  <div class="sm faint" style="text-align:center;margin-top:18px">Thread · Phase 1 · ${S.fragments.length} fragments · ${S.threads.length} threads</div>
+  `;
+}
+
+/* ============================================================
+   MODAL / SHEET
+   ============================================================ */
+function openSheet(title, bodyHtml){
+  el("modalRoot").innerHTML = `<div class="scrim" data-act="scrimClose"><div class="sheet" data-stop><div class="grip"></div><h3>${esc(title)}</h3>${bodyHtml}</div></div>`;
+}
+function closeSheet(){ el("modalRoot").innerHTML=""; }
+
+function sheetNewThread(){
+  const projOpts = S.projects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("");
+  openSheet("New thread",`
+    <label class="fld">Title (a question or a line of thinking)</label>
+    <input id="ntTitle" placeholder="e.g. Is the VP losing confidence in delivery?" />
+    <label class="fld">Domain</label>
+    <select id="ntDomain">${DOMAINS.map(([k,l])=>`<option value="${k}">${l}</option>`).join("")}</select>
+    <label class="fld">Project (optional)</label>
+    <select id="ntProject"><option value="">—</option>${projOpts}</select>
+    <div class="btnrow" style="margin-top:16px"><button class="primary grow" data-act="createThread">Create</button><button class="ghost" data-act="closeSheet">Cancel</button></div>
+  `);
+}
+function sheetSortThread(id){
+  openSheet("Sort this thread",`
+    <p class="muted sm">A thread closes only with a real outcome. Pick one:</p>
+    <div class="seg" id="sortType" style="margin:10px 0">
+      ${["decision","action","kill","park"].map((x,i)=>`<button class="${i===0?'on':''}" data-act="sortType" data-v="${x}">${x}</button>`).join("")}
+    </div>
+    <div id="sortFields"></div>
+    <input type="hidden" id="sortTid" value="${id}" />
+    <div class="btnrow" style="margin-top:16px"><button class="primary grow" data-act="confirmSort">Close thread</button><button class="ghost" data-act="closeSheet">Cancel</button></div>
+  `);
+  sortFields("decision");
+}
+let sortKind="decision";
+function sortFields(kind){
+  sortKind=kind;
+  document.querySelectorAll('#sortType button').forEach(b=>b.classList.toggle('on',b.dataset.v===kind));
+  let f="";
+  if(kind==="decision"||kind==="action"){
+    f=`<label class="fld">${kind==="decision"?"The decision + reasoning":"The action committed"}</label>
+       <textarea id="soContent" rows="3" placeholder="${kind==="decision"?"I will… because…":"I will… (specific, doable)"}"></textarea>
+       <label class="fld">${kind==="decision"?"Next checkpoint date":"Deadline"}</label>
+       <input id="soDeadline" type="date" />`;
+  } else if(kind==="kill"){
+    f=`<label class="fld">Why this no longer matters</label><textarea id="soContent" rows="3" placeholder="No longer matters because…"></textarea>`;
+  } else if(kind==="park"){
+    f=`<label class="fld">Wake-up trigger (revisit when…)</label><textarea id="soContent" rows="3" placeholder="Revisit when X happens"></textarea>`;
+  }
+  el("sortFields").innerHTML=f;
+}
+function sheetRecordTurn(id){
+  openSheet("Record Q&A",`
+    <p class="muted sm">Paste the question Claude asked, and your answer.</p>
+    <label class="fld">Question</label><textarea id="rtQ" rows="2"></textarea>
+    <label class="fld">Your answer</label><textarea id="rtA" rows="3"></textarea>
+    <input type="hidden" id="rtTid" value="${id}" />
+    <div class="btnrow" style="margin-top:16px"><button class="primary grow" data-act="confirmTurn">Save</button><button class="ghost" data-act="closeSheet">Cancel</button></div>
+  `);
+}
+function sheetProject(p){
+  const isNew=!p;
+  openSheet(isNew?"New project":"Edit project",`
+    <label class="fld">Name</label><input id="pName" value="${p?esc(p.name):""}" placeholder="e.g. Team delivery" />
+    <label class="fld">Domain</label><select id="pDomain">${DOMAINS.map(([k,l])=>`<option value="${k}" ${p&&p.domain===k?"selected":""}>${l}</option>`).join("")}</select>
+    <label class="fld">Goal (north star)</label><textarea id="pGoal" rows="2" placeholder="What this project is ultimately for">${p?esc(p.goal||""):""}</textarea>
+    <label class="fld">My role in it</label><textarea id="pRole" rows="2" placeholder="What you're responsible for / who you must be here">${p?esc(p.role||""):""}</textarea>
+    <input type="hidden" id="pId" value="${p?p.id:""}" />
+    <div class="btnrow" style="margin-top:16px"><button class="primary grow" data-act="saveProject">Save</button><button class="ghost" data-act="closeSheet">Cancel</button></div>
+  `);
+}
+function sheetAssign(fragId){
+  const opts = activeThreads().map(t=>`<button class="grow" data-act="assignTo" data-fid="${fragId}" data-tid="${t.id}" style="margin-bottom:6px;text-align:left">${esc(t.title)}</button>`).join("");
+  openSheet("Attach to thread",`
+    ${opts||'<p class="muted sm">No active threads.</p>'}
+    <div class="btnrow" style="margin-top:10px"><button class="ghost grow" data-act="newThreadFor" data-fid="${fragId}">+ New thread from this</button></div>
+  `);
+}
+function sheetText(title, placeholder, act){
+  openSheet(title,`<textarea id="stInput" rows="3" placeholder="${esc(placeholder)}"></textarea><div class="btnrow" style="margin-top:14px"><button class="primary grow" data-act="${act}">Save</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`);
+}
+
+/* ============================================================
+   ACTIONS
+   ============================================================ */
+function go(tab){ UI.tab=tab; window.scrollTo(0,0); render(); }
+function openThread(id){ UI.threadId=id; UI.tab="thread"; window.scrollTo(0,0); render(); }
+function openProject(id){ UI.projectId=id; UI.tab="project"; window.scrollTo(0,0); render(); }
+function touch(t){ t.lastActivityAt=now(); }
+
+function saveFragment(){
+  const body = el("capBody").value.trim();
+  if(!body){ toast("Nothing to save"); return; }
+  const f = {
+    id:uid(), createdAt:now(), body,
+    type: el("capType")?el("capType").value||null:null,
+    threadId: el("capThread")?el("capThread").value||null:null,
+    mode: UI.captureMode,
+    fatigueLevel: capFatigue||null,
+  };
+  S.fragments.push(f);
+  if(f.threadId){ const t=thread(f.threadId); if(t) touch(t); }
+  capFatigue=0; save();
+  if(UI.captureMode==="engage_ai"){
+    if(f.threadId){ copy(questionPrompt(thread(f.threadId))); }
+    else { toast("Saved. Attach to a thread to get a question."); }
+  } else { toast("✓ Logged"); }
+  el("capBody").value=""; render();
+}
+
+const ACT = {
+  capMode(b){ UI.captureMode=b.dataset.v; render(); },
+  fatigue(b){ capFatigue=+b.dataset.v; document.querySelectorAll('#capFatigue .chip').forEach(c=>c.classList.toggle('on',c===b)); },
+  saveFragment,
+  threadFilter(b){ threadFilter=b.dataset.v; render(); },
+  newThread(){ sheetNewThread(); },
+  createThread(){
+    const title=el("ntTitle").value.trim(); if(!title){toast("Title?");return;}
+    const t={id:uid(),title,domain:el("ntDomain").value,projectId:el("ntProject").value||null,status:"active",depthLevel:1,openedAt:now(),lastActivityAt:now(),outcome:null};
+    S.threads.push(t); save(); closeSheet(); openThread(t.id);
+  },
+  openThread(b){ openThread(b.dataset.id); },
+  openProject(b){ openProject(b.dataset.id); },
+  setDepth(b){ const t=thread(b.dataset.id); if(t){t.depthLevel=+b.value; touch(t); save();} },
+  questionPrompt(b){ const t=thread(b.dataset.id); copy(questionPrompt(t)); },
+  coherence(){ copy(coherencePrompt()); },
+  addFragmentTo(b){ UI.tab="capture"; render(); setTimeout(()=>{ const s=el("capThread"); if(s){s.value=b.dataset.id;} UI.captureMode="engage_ai"; el("capBody").focus(); },30); toast("Capturing into this thread"); },
+  recordTurn(b){ sheetRecordTurn(b.dataset.id); },
+  confirmTurn(){
+    const q=el("rtQ").value.trim(), a=el("rtA").value.trim(), id=el("rtTid").value;
+    if(!q){toast("Question?");return;}
+    S.turns.push({id:uid(),threadId:id,createdAt:now(),question:q,answer:a||null});
+    const t=thread(id); if(t)touch(t); save(); closeSheet(); render();
+  },
+  answerTurn(b){
+    const tn=S.turns.find(x=>x.id===b.dataset.id); if(!tn)return;
+    sheetText("Your answer","Answer…","saveAnswer"); el("modalRoot").dataset.turn=tn.id;
+  },
+  saveAnswer(){ const id=el("modalRoot").dataset.turn; const tn=S.turns.find(x=>x.id===id); if(tn){tn.answer=el("stInput").value.trim()||null; const t=thread(tn.threadId); if(t)touch(t); save();} closeSheet(); render(); },
+  sortThread(b){ sheetSortThread(b.dataset.id); },
+  sortType(b){ sortFields(b.dataset.v); },
+  confirmSort(){
+    const id=el("sortTid").value; const t=thread(id); if(!t)return;
+    const content=el("soContent")?el("soContent").value.trim():"";
+    const deadlineEl=el("soDeadline"); const deadline=deadlineEl&&deadlineEl.value?new Date(deadlineEl.value).getTime():null;
+    if(!content){ toast("This thread can't close without it"); return; }
+    if((sortKind==="decision"||sortKind==="action") && !deadline){ toast("A date is required"); return; }
+    t.outcome={type:sortKind,content,deadline:deadline||null,wakeTrigger:sortKind==="park"?content:null,reasoning:content};
+    t.status = sortKind==="kill"?"killed":sortKind==="park"?"parked":"sorted";
+    touch(t); save(); closeSheet(); render();
+  },
+  reopen(b){ const t=thread(b.dataset.id); if(t){t.status="active"; t.outcome=null; touch(t); save(); render();} },
+  deleteThread(b){ if(!confirm("Delete this thread? Its fragments stay (unassigned).")) return; const id=b.dataset.id; S.fragments.forEach(f=>{if(f.threadId===id)f.threadId=null;}); S.turns=S.turns.filter(t=>t.threadId!==id); S.threads=S.threads.filter(t=>t.id!==id); save(); go("threads"); },
+  linkProject(b){ const opts=S.projects.map(p=>`<button class="grow" data-act="doLink" data-tid="${b.dataset.id}" data-pid="${p.id}" style="margin-bottom:6px;text-align:left">${esc(p.name)}</button>`).join(""); openSheet("Link project",opts||'<p class="muted sm">No projects yet.</p>'); },
+  doLink(b){ const t=thread(b.dataset.tid); if(t){t.projectId=b.dataset.pid; if(project(b.dataset.pid))t.domain=project(b.dataset.pid).domain; save();} closeSheet(); render(); },
+  assignFragment(b){ sheetAssign(b.dataset.id); },
+  assignTo(b){ const f=S.fragments.find(x=>x.id===b.dataset.fid); if(f){f.threadId=b.dataset.tid; const t=thread(b.dataset.tid); if(t)touch(t); save();} closeSheet(); render(); },
+  newThreadFor(b){ const f=S.fragments.find(x=>x.id===b.dataset.fid); closeSheet(); sheetNewThread(); if(f)setTimeout(()=>{el("ntTitle").value=f.body.slice(0,80);},30); el("modalRoot").dataset.frag=b.dataset.fid; },
+  newProject(){ sheetProject(null); },
+  editProject(b){ sheetProject(project(b.dataset.id)); },
+  saveProject(){
+    const id=el("pId").value; const name=el("pName").value.trim(); if(!name){toast("Name?");return;}
+    const data={name,domain:el("pDomain").value,goal:el("pGoal").value.trim(),role:el("pRole").value.trim()};
+    if(id){ Object.assign(project(id),data); } else { const p={id:uid(),...data}; S.projects.push(p); }
+    save(); closeSheet(); render();
+  },
+  deleteProject(b){ if(!confirm("Delete project? Threads keep their data but unlink.")) return; const id=b.dataset.id; S.threads.forEach(t=>{if(t.projectId===id)t.projectId=null;}); S.projects=S.projects.filter(p=>p.id!==id); save(); go("projects"); },
+  addGoal(){ sheetText("Add life goal","An ultimate goal everything should serve…","saveGoal"); },
+  saveGoal(){ const v=el("stInput").value.trim(); if(v){S.global.goals.push(v); save();} closeSheet(); render(); },
+  delGoal(b){ S.global.goals.splice(+b.dataset.i,1); save(); render(); },
+  addModel(){ sheetText("Add thinking model","e.g. invert · margin of safety · opportunity cost","saveModel"); },
+  saveModel(){ const v=el("stInput").value.trim(); if(v){S.global.models.push(v); save();} closeSheet(); render(); },
+  delModel(b){ S.global.models.splice(+b.dataset.i,1); save(); render(); },
+  export(){ doExport(); },
+  import(){ doImport(); },
+  closeSheet(){ closeSheet(); },
+  scrimClose(){ closeSheet(); },
+};
+
+/* override newThreadFor → createThread to also attach fragment */
+const _createThread = ACT.createThread;
+ACT.createThread = function(){
+  const fid = el("modalRoot").dataset.frag;
+  _createThread();
+  if(fid){ const t=S.threads[S.threads.length-1]; const f=S.fragments.find(x=>x.id===fid); if(f&&t){f.threadId=t.id; save();} delete el("modalRoot").dataset.frag; }
+};
+
+/* ---------- backup ---------- */
+function doExport(){
+  const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const d=new Date(); const stamp=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  a.href=url; a.download=`thread-backup-${stamp}.json`; a.click();
+  URL.revokeObjectURL(url);
+  S.meta.lastBackup=now(); save(); render(); toast("✓ Backup downloaded");
+}
+function doImport(){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept="application/json,.json";
+  inp.onchange=()=>{ const file=inp.files[0]; if(!file)return; const r=new FileReader();
+    r.onload=()=>{ try{ const data=migrate(JSON.parse(r.result)); if(!confirm("Replace ALL current data with this backup?"))return; S=data; save(); render(); toast("✓ Restored"); }catch(e){ toast("Invalid file"); } };
+    r.readAsText(file); };
+  inp.click();
+}
+
+/* ============================================================
+   EVENT DELEGATION
+   ============================================================ */
+document.addEventListener("click", e=>{
+  const tabBtn = e.target.closest("[data-tab]");
+  if(tabBtn){ go(tabBtn.dataset.tab); return; }
+  const a = e.target.closest("[data-act]");
+  if(!a) return;
+  const fn = ACT[a.dataset.act];
+  if(fn){ e.preventDefault(); fn(a); }
+}, false);
+// stop sheet content clicks from closing scrim
+document.addEventListener("click", e=>{ if(e.target.closest("[data-stop]")) e.stopPropagation(); }, true);
+
+/* seed first run with a gentle starting point */
+if(!S.global.goals.length && !S.projects.length && !S.fragments.length){
+  S.global.models = ["invert: what would guarantee failure?","margin of safety","opportunity cost: what am I NOT doing?"];
+  save();
+}
+
+render();
+</script>
+</body>
+</html>
