@@ -349,7 +349,7 @@ function viewThreads(){
     .filter(t=>threadFilter==="all"?true:t.status===threadFilter)
     .sort((a,b)=>b.lastActivityAt-a.lastActivityAt);
   const seg = `<div class="seg" style="margin-bottom:12px">${filters.map(([k,l])=>`<button class="${threadFilter===k?'on':''}" data-act="threadFilter" data-v="${k}">${l}</button>`).join("")}</div>`;
-  const coherence = S.projects.length>1 ? `<button class="ghost grow" data-act="coherence">◇ Coherence check</button>` : "";
+  const coherence = S.projects.length>=1 ? `<button class="ghost grow" data-act="coherence">◇ Coherence check</button>` : "";
   let body;
   if(!list.length){
     body = `<div class="empty"><div class="big">≡</div>No ${threadFilter==="all"?"":threadFilter+" "}threads.</div>`;
