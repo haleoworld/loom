@@ -1,6 +1,6 @@
-# Thread
+# Loom
 
-A single-file, mobile-first thinking-continuity system. No build step, no dependencies, no server. Open `index.html` in a browser, "Add to Home Screen" on your phone, and it runs offline with data stored on-device.
+A single-file, mobile-first thinking-continuity system that weaves your fragments, threads, projects, and life goals into one coherent fabric. No build step, no dependencies, no server. Open `index.html` in a browser, "Add to Home Screen" on your phone, and it runs offline with data stored on-device.
 
 ## Why it exists
 To let you **think in fragments, have AI carry the thread, and stay coherent across projects** when sustained focus is rare. The job it does that you can't hold in your head while interrupted: a two-axis coherence check —

@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Thread" />
+<meta name="apple-mobile-web-app-title" content="Loom" />
 <meta name="theme-color" content="#0f1115" />
-<title>Thread</title>
+<title>Loom</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f1115'/%3E%3Cpath d='M30 26 v48 M50 18 v64 M70 26 v48' stroke='%237aa2ff' stroke-width='7' stroke-linecap='round'/%3E%3C/svg%3E" />
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f1115'/%3E%3Cpath d='M30 26 v48 M50 18 v64 M70 26 v48' stroke='%237aa2ff' stroke-width='7' stroke-linecap='round'/%3E%3C/svg%3E" />
-<link rel="manifest" href="data:application/json,%7B%22name%22%3A%22Thread%22%2C%22short_name%22%3A%22Thread%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230f1115%22%2C%22theme_color%22%3A%22%230f1115%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%253D%2527http%253A%252F%252Fwww.w3.org%252F2000%252Fsvg%2527%2520viewBox%253D%25270%25200%2520100%2520100%2527%253E%253Crect%2520width%253D%2527100%2527%2520height%253D%2527100%2527%2520rx%253D%252722%2527%2520fill%253D%2527%25230f1115%2527%252F%253E%253Cpath%2520d%253D%2527M30%252026%2520v48%2520M50%252018%2520v64%2520M70%252026%2520v48%2527%2520stroke%253D%2527%25237aa2ff%2527%2520stroke-width%253D%25277%2527%2520stroke-linecap%253D%2527round%2527%252F%253E%253C%252Fsvg%253E%22%2C%22sizes%22%3A%22any%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%2C%22purpose%22%3A%22any%22%7D%5D%7D" />
+<link rel="manifest" href="data:application/json,%7B%22name%22%3A%22Loom%22%2C%22short_name%22%3A%22Loom%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230f1115%22%2C%22theme_color%22%3A%22%230f1115%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%253D%2527http%253A%252F%252Fwww.w3.org%252F2000%252Fsvg%2527%2520viewBox%253D%25270%25200%2520100%2520100%2527%253E%253Crect%2520width%253D%2527100%2527%2520height%253D%2527100%2527%2520rx%253D%252722%2527%2520fill%253D%2527%25230f1115%2527%252F%253E%253Cpath%2520d%253D%2527M30%252026%2520v48%2520M50%252018%2520v64%2520M70%252026%2520v48%2527%2520stroke%253D%2527%25237aa2ff%2527%2520stroke-width%253D%25277%2527%2520stroke-linecap%253D%2527round%2527%252F%253E%253C%252Fsvg%253E%22%2C%22sizes%22%3A%22any%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%2C%22purpose%22%3A%22any%22%7D%5D%7D" />
 <style>
   :root{
     --bg:#0f1115; --surface:#171a21; --surface2:#1f2430; --line:#2a3040;
@@ -100,7 +100,7 @@
 <body>
 <div id="app">
   <header>
-    <h1 id="hTitle">Thread</h1>
+    <h1 id="hTitle">Loom</h1>
     <div class="sub" id="hSub"></div>
   </header>
   <main id="main"></main>
@@ -112,7 +112,7 @@
 <script>
 "use strict";
 /* ============================================================
-   Thread — single-file thinking-continuity PWA
+   Loom — single-file thinking-continuity PWA
    Three layers: Global (models + life goals) → Projects (goal + role) → Threads
    Storage: localStorage (one JSON blob). Backup via JSON export/import.
    ============================================================ */
@@ -475,7 +475,7 @@ function viewGlobal(){
     </div>
     <div class="sm faint" style="margin-top:8px">Last backup: ${S.meta.lastBackup?ago(S.meta.lastBackup):"never"}</div>
   </div>
-  <div class="sm faint" style="text-align:center;margin-top:18px">Thread · Phase 1 · ${S.fragments.length} fragments · ${S.threads.length} threads</div>
+  <div class="sm faint" style="text-align:center;margin-top:18px">Loom · Phase 1 · ${S.fragments.length} fragments · ${S.threads.length} threads</div>
   `;
 }
 
