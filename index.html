@@ -63,6 +63,7 @@
   button.ghost{background:transparent;}
   button.sm{min-height:36px; padding:7px 11px; font-size:13px;}
   button.danger{color:var(--bad); border-color:#4a2b2b;}
+  #micBtn.rec{color:var(--bad); border-color:var(--bad);}
   .btnrow{display:flex; gap:8px; flex-wrap:wrap;}
   .seg{display:flex; gap:6px; background:var(--surface2); padding:4px; border-radius:12px; border:1px solid var(--line);}
   .seg button{flex:1; background:transparent; border:none; min-height:38px; color:var(--muted); border-radius:8px;}
@@ -254,6 +255,64 @@ Be specific and reference items by name. Prioritize: lead with the single most i
 }
 
 /* ============================================================
+   PHASE 2 — friction reducers: voice capture, thread auto-suggest,
+   structured markdown export. All client-side, no new cost/dependency.
+   ============================================================ */
+const STOP = new Set("the a an and or but if then else of to in on for with at by from is are was were be been being it its this that these those i you he she they we me my your our their as so do does did not no yes will would should could can about into over under than what when how who whom which there here have has had get got want need".split(" "));
+function toks(s){ return ((s||"").toLowerCase().match(/[a-z0-9']+/g))||[]; }
+function stem(w){ return w.length>3 ? w.replace(/ies$/,"y").replace(/s$/,"") : w; }   // light plural folding
+function keyTokens(s){ return [...new Set(toks(s).filter(w=>w.length>2 && !STOP.has(w)).map(stem))]; }
+function suggestThreads(text, max){
+  const qs=new Set(keyTokens(text)); if(!qs.size) return [];
+  return activeThreads().map(t=>{
+    const p=project(t.projectId);
+    const title=new Set(keyTokens(t.title));
+    const bag=new Set(keyTokens(t.title+" "+threadFragments(t.id).map(f=>f.body).join(" ")+" "+(p?p.name+" "+(p.goal||""):"")));
+    let score=0; qs.forEach(w=>{ if(bag.has(w)) score += title.has(w)?2:1; });
+    return {t,score};
+  }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,max||3).map(x=>x.t);
+}
+function capInput(){
+  const ta=el("capBody"), sug=el("capSuggest"); if(!ta||!sug) return;
+  const sel=el("capThread");
+  if(sel && sel.value){ const t=thread(sel.value); sug.innerHTML=`<div class="sm" style="margin:8px 2px;color:var(--accent)">→ attaching to “${esc(t?t.title:'')}” <span class="faint" data-act="unpickSuggest" style="cursor:pointer">(undo)</span></div>`; return; }
+  const words=ta.value.trim().split(/\s+/).filter(Boolean);
+  const matches = words.length>=3 ? suggestThreads(ta.value,3) : [];
+  if(!matches.length){ sug.innerHTML=""; return; }
+  sug.innerHTML=`<div class="sm muted" style="margin:8px 2px 4px">Looks like it belongs to:</div><div class="chips">`+matches.map(t=>`<span class="chip" data-act="pickSuggest" data-tid="${t.id}">↳ ${esc(t.title)}</span>`).join("")+`</div>`;
+}
+function threadMarkdown(t){
+  const p=project(t.projectId);
+  let md=`# ${t.title}\n\n- Domain: ${domainLabel(t.domain)}\n- Status: ${t.status} · depth ${t.depthLevel} (${DEPTHS[t.depthLevel]})\n`;
+  if(p) md+=`- Project: ${p.name} — goal: ${p.goal||"?"}; role: ${p.role||"?"}\n`;
+  const fr=threadFragments(t.id), tn=threadTurns(t.id);
+  md+=`\n## Fragments\n`+(fr.length?fr.map(f=>`- [${fmtDate(f.createdAt)}${f.type?", "+f.type:""}] ${f.body}`).join("\n"):"_none_");
+  md+=`\n\n## Q&A\n`+(tn.length?tn.map(x=>`**Q:** ${x.question}\n\n**A:** ${x.answer||"_unanswered_"}`).join("\n\n"):"_none_");
+  if(t.outcome) md+=`\n\n## Outcome — ${t.outcome.type}\n${t.outcome.content}${t.outcome.deadline?`\n- by ${fmtDate(t.outcome.deadline)}`:""}`;
+  return md;
+}
+function corpusMarkdown(){
+  let md=`# Loom export\n\n## Global frame\n**Life goals:**\n${S.global.goals.map(g=>"- "+g).join("\n")||"- (none)"}\n\n**Thinking models:**\n${S.global.models.map(m=>"- "+m).join("\n")||"- (none)"}\n\n## Projects\n${S.projects.map(p=>`- **${p.name}** [${domainLabel(p.domain)}] — goal: ${p.goal||"?"}; role: ${p.role||"?"}`).join("\n")||"- (none)"}\n\n## Threads\n`;
+  [...S.threads].sort((a,b)=>b.lastActivityAt-a.lastActivityAt).forEach(t=>{ md+="\n"+threadMarkdown(t)+"\n\n---\n"; });
+  return md;
+}
+/* voice — Web Speech API where supported; iOS falls back to the keyboard mic */
+const SR = (typeof window!=="undefined") && (window.SpeechRecognition||window.webkitSpeechRecognition);
+const voiceOK = !!SR;
+let rec=null, recOn=false, recBase="";
+function updateMic(){ const b=el("micBtn"); if(b){ b.classList.toggle("rec",recOn); b.textContent=recOn?"⏹":"🎤"; } }
+function micToggle(){
+  if(!SR) return;
+  if(recOn){ try{rec.stop();}catch(e){} return; }
+  rec=new SR(); rec.lang="en-US"; rec.interimResults=true; rec.continuous=true;
+  recBase = el("capBody")?el("capBody").value:"";
+  rec.onresult=e=>{ let txt=""; for(let i=e.resultIndex;i<e.results.length;i++) txt+=e.results[i][0].transcript; const ta=el("capBody"); if(ta){ ta.value=(recBase?recBase.replace(/\s*$/,"")+" ":"")+txt; if(e.results[e.results.length-1].isFinal) recBase=ta.value; capInput(); } };
+  rec.onerror=ev=>{ toast("🎤 "+(ev.error||"mic error")); recOn=false; updateMic(); };
+  rec.onend=()=>{ recOn=false; updateMic(); };
+  try{ rec.start(); recOn=true; updateMic(); toast("🎤 listening… tap ⏹ to stop"); }catch(e){ toast("mic busy"); }
+}
+
+/* ============================================================
    RENDER
    ============================================================ */
 const NAV = [
@@ -295,7 +354,11 @@ function viewCapture(){
   return `
   <h2>New fragment</h2>
   <div class="card">
-    <textarea id="capBody" rows="4" placeholder="What just happened, what you're thinking, an observation…" autofocus></textarea>
+    <div style="position:relative">
+      <textarea id="capBody" rows="4" placeholder="What just happened, what you're thinking, an observation…" oninput="capInput()" autofocus></textarea>
+      ${voiceOK?`<button id="micBtn" class="sm ghost" data-act="mic" style="position:absolute;right:8px;bottom:10px;min-height:32px;padding:4px 10px">🎤</button>`:""}
+    </div>
+    <div id="capSuggest"></div>
     <div class="seg" style="margin-top:12px">
       <button class="${UI.captureMode==='just_log'?'on':''}" data-act="capMode" data-v="just_log">Just log</button>
       <button class="${UI.captureMode==='engage_ai'?'on':''}" data-act="capMode" data-v="engage_ai">Engage AI</button>
@@ -303,11 +366,12 @@ function viewCapture(){
     <p class="muted sm" style="margin:8px 2px 0">${UI.captureMode==='just_log'
       ? "Stored, no question. For tired moments."
       : "On save, I build a one-question prompt for you to paste into Claude."}</p>
+    ${!voiceOK?`<p class="faint sm" style="margin:6px 2px 0">🎤 Tip: tap your keyboard's mic key to dictate.</p>`:""}
 
     <details style="margin-top:12px">
       <summary class="muted sm" style="cursor:pointer">Optional: thread, type, fatigue</summary>
       <label class="fld">Attach to thread</label>
-      <select id="capThread"><option value="">— unassigned —</option>${threadOpts}</select>
+      <select id="capThread" onchange="capInput()"><option value="">— unassigned —</option>${threadOpts}</select>
       <label class="fld">Type</label>
       <select id="capType"><option value="">—</option>${FRAG_TYPES.map(t=>`<option value="${t}">${t}</option>`).join("")}</select>
       <label class="fld">Fatigue (calibrates question depth)</label>
@@ -422,6 +486,7 @@ function viewThread(){
   </div>
   ${sorted?`<div class="btnrow" style="margin-top:8px"><button class="ghost grow" data-act="reopen" data-id="${t.id}">Reopen thread</button></div>`
           :`<div class="btnrow" style="margin-top:8px"><button class="ghost grow" data-act="sortThread" data-id="${t.id}">Sort this thread (close)</button></div>`}
+  <div class="btnrow" style="margin-top:8px"><button class="ghost grow" data-act="threadMd" data-id="${t.id}">⧉ Copy thread as markdown</button></div>
 
   <h2>Fragments</h2><div class="card">${fragHtml}</div>
   <h2>Q&amp;A turns</h2><div class="card">${turnHtml}</div>
@@ -480,6 +545,9 @@ function viewGlobal(){
     <div class="btnrow" style="margin-top:12px">
       <button class="grow" data-act="export">⤓ Backup (download JSON)</button>
       <button class="grow ghost" data-act="import">⤒ Restore</button>
+    </div>
+    <div class="btnrow" style="margin-top:8px">
+      <button class="grow ghost" data-act="corpusMd">⧉ Copy all as markdown (for AI)</button>
     </div>
     <div class="sm faint" style="margin-top:8px">Last backup: ${S.meta.lastBackup?ago(S.meta.lastBackup):"never"}</div>
   </div>
@@ -661,6 +729,11 @@ const ACT = {
   export(){ doExport(); },
   import(){ doImport(); },
   syncNow(){ pull(); },
+  mic(){ micToggle(); },
+  pickSuggest(b){ const s=el("capThread"); if(s) s.value=b.dataset.tid; capInput(); },
+  unpickSuggest(){ const s=el("capThread"); if(s) s.value=""; capInput(); },
+  threadMd(b){ copy(threadMarkdown(thread(b.dataset.id))); },
+  corpusMd(){ copy(corpusMarkdown()); },
   closeSheet(){ closeSheet(); },
   scrimClose(){ closeSheet(); },
 };

@@ -38,9 +38,18 @@ To let you **think in fragments, have AI carry the thread, and stay coherent acr
 - Tailscale mount: `tailscale serve --bg --set-path /loom http://localhost:8743` (alongside `/job-agent`).
 - Update the app: edit `index.html` here — it's live immediately (no build, no deploy).
 
-## Phase 1 scope (deliberately minimal)
-Capture · threads · sorted-criteria enforcement · Claude prompt export · coherence check · backup.
-Not built yet (and shouldn't be until this has been lived in for a few weeks): automated weekly synthesis, the dashboard, voice capture, cross-thread pattern detection. See the proposal for the full roadmap.
+## Phase 1 (built)
+Capture · threads · sorted-criteria enforcement · Claude prompt export · coherence check · backup · self-hosted sync.
+
+## Phase 2 — friction reducers (built)
+- **Voice capture** — mic button using the Web Speech API where supported; on iOS, the keyboard's dictation key covers any text field (a tip is shown when in-app voice isn't available).
+- **Auto-suggest thread assignment** — as you type a fragment, Loom suggests which active thread it likely belongs to (client-side keyword match with light plural-stemming; fails safe — suggests nothing rather than mis-filing). One tap to attach.
+- **Structured markdown export** — "Copy thread as markdown" (per thread) and "Copy all as markdown" (Global) produce clean, paste-ready context for the Claude app.
+
+All Phase 2 work is client-side — no new dependency, no API key, no added cost.
+
+## Not built yet
+Held until this has been lived in for a few weeks (per the proposal): automated weekly synthesis, the dashboard, the re-org ritual UI, cross-thread pattern detection, and the (optional, ongoing-cost) Claude-API integration that would return the Engage-AI question straight into the thread. See the proposal for the full roadmap.
 
 ## Stack
 Vanilla HTML/CSS/JS (`index.html`) + a ~120-line dependency-free Node server (`server.js`) + a small service worker (`sw.js`). No frameworks, no build, no third-party services. Chosen for near-zero cost and near-zero maintenance — it reuses the Mac Mini + Tailscale setup already in place.
