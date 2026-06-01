@@ -308,7 +308,10 @@ function corpusMarkdown(){
 }
 /* voice — Web Speech API where supported; iOS falls back to the keyboard mic */
 const SR = (typeof window!=="undefined") && (window.SpeechRecognition||window.webkitSpeechRecognition);
-const voiceOK = !!SR;
+// iOS exposes the Web Speech object but refuses to run recognition ("service-not-allowed"),
+// especially for Cantonese — so on iOS we hide the in-app mic and use the keyboard's dictation key.
+const isIOS = (typeof navigator!=="undefined") && (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1));
+const voiceOK = !!SR && !isIOS;
 let voiceLang = (typeof localStorage!=="undefined" && localStorage.getItem("loom.voiceLang")) || "en-US";
 let rec=null, recOn=false, recBase="";
 function updateMic(){ const b=el("micBtn"); if(b){ b.classList.toggle("rec",recOn); b.textContent=recOn?"⏹":"🎤"; } }
@@ -318,7 +321,7 @@ function micToggle(){
   rec=new SR(); rec.lang=voiceLang; rec.interimResults=true; rec.continuous=true;
   recBase = el("capBody")?el("capBody").value:"";
   rec.onresult=e=>{ let txt=""; for(let i=e.resultIndex;i<e.results.length;i++) txt+=e.results[i][0].transcript; const ta=el("capBody"); if(ta){ ta.value=(recBase?recBase.replace(/\s*$/,"")+" ":"")+txt; if(e.results[e.results.length-1].isFinal) recBase=ta.value; capInput(); } };
-  rec.onerror=ev=>{ toast("🎤 "+(ev.error||"mic error")); recOn=false; updateMic(); };
+  rec.onerror=ev=>{ const m=(ev.error==="not-allowed"||ev.error==="service-not-allowed")?"🎤 Mic unavailable here — use your keyboard's dictation key (supports Cantonese)":("🎤 "+(ev.error||"mic error")); toast(m); recOn=false; updateMic(); };
   rec.onend=()=>{ recOn=false; updateMic(); };
   try{ rec.start(); recOn=true; updateMic(); toast("🎤 listening… tap ⏹ to stop"); }catch(e){ toast("mic busy"); }
 }
@@ -838,11 +841,11 @@ document.addEventListener("click", e=>{
   if(tabBtn){ go(tabBtn.dataset.tab); return; }
   const a = e.target.closest("[data-act]");
   if(!a) return;
+  // a click inside the sheet that only resolves to the backdrop = empty space; don't close
+  if(a.dataset.act === "scrimClose" && e.target.closest("[data-stop]")) return;
   const fn = ACT[a.dataset.act];
   if(fn){ e.preventDefault(); fn(a); }
 }, false);
-// stop sheet content clicks from closing scrim
-document.addEventListener("click", e=>{ if(e.target.closest("[data-stop]")) e.stopPropagation(); }, true);
 
 /* seed first run with a gentle starting point */
 if(!S.global.goals.length && !S.projects.length && !S.fragments.length){

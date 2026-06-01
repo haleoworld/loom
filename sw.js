@@ -1,5 +1,5 @@
 /* Loom service worker — keep the app openable offline; never cache data. */
-const CACHE = "loom-shell-v3";
+const CACHE = "loom-shell-v4";
 const SHELL = ["./", "./index.html", "./sw.js"];
 
 self.addEventListener("install", e => {
