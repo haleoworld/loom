@@ -847,11 +847,10 @@ document.addEventListener("click", e=>{
   if(fn){ e.preventDefault(); fn(a); }
 }, false);
 
-/* seed first run with a gentle starting point */
-if(!S.global.goals.length && !S.projects.length && !S.fragments.length){
-  S.global.models = ["invert: what would guarantee failure?","margin of safety","opportunity cost: what am I NOT doing?"];
-  save();
-}
+/* NOTE: no auto-seed. A previous version re-seeded default models whenever the
+   doc looked empty and called save() — which bumped updatedAt and pushed, so a
+   stale device kept clobbering the synced state on every open. The server (Mini)
+   is the source of truth; new devices start empty and pull it. */
 
 render();
 initSync();
