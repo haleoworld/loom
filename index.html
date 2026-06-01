@@ -351,7 +351,7 @@ function render(){
   el("main").innerHTML = html;
   // nav
   el("nav").innerHTML = NAV.map(([k,ic,lbl])=>{
-    const on = (UI.tab===k || (UI.tab==="thread"&&k==="threads")) ? "on":"";
+    const on = (UI.tab===k || (UI.tab==="thread"&&k==="threads") || (UI.tab==="project"&&k==="projects")) ? "on":"";
     return `<button class="${on}" data-tab="${k}"><span class="ic">${ic}</span>${lbl}</button>`;
   }).join("");
 }
@@ -653,9 +653,23 @@ function sheetText(title, placeholder, act){
 /* ============================================================
    ACTIONS
    ============================================================ */
-function go(tab){ UI.tab=tab; window.scrollTo(0,0); render(); }
-function openThread(id){ UI.threadId=id; UI.tab="thread"; window.scrollTo(0,0); render(); }
-function openProject(id){ UI.projectId=id; UI.tab="project"; window.scrollTo(0,0); render(); }
+/* ---- hash router: #/capture · #/threads[/filter] · #/thread/<id> · #/projects · #/project/<id> · #/global ---- */
+const ROUTE_FILTERS = ["active","sorted","parked","killed","all"];
+function navigate(h){ if(location.hash===h) applyHash(); else location.hash=h; }
+function applyHash(){
+  const parts = (location.hash||"").replace(/^#\/?/,"").split("/").filter(Boolean);
+  const sec = parts[0] || "capture";
+  if(sec==="threads"){ UI.tab="threads"; if(parts[1] && ROUTE_FILTERS.includes(parts[1])) threadFilter=parts[1]; }
+  else if(sec==="thread"){ if(parts[1] && thread(parts[1])){ UI.tab="thread"; UI.threadId=parts[1]; } else UI.tab="threads"; }
+  else if(sec==="projects"){ UI.tab="projects"; }
+  else if(sec==="project"){ if(parts[1] && project(parts[1])){ UI.tab="project"; UI.projectId=parts[1]; } else UI.tab="projects"; }
+  else if(sec==="global"){ UI.tab="global"; }
+  else { UI.tab="capture"; }
+  window.scrollTo(0,0); render();
+}
+function go(tab){ navigate("#/"+tab); }
+function openThread(id){ navigate("#/thread/"+id); }
+function openProject(id){ navigate("#/project/"+id); }
 function touch(t){ t.lastActivityAt=now(); }
 
 function saveFragment(){
@@ -682,7 +696,7 @@ const ACT = {
   capMode(b){ UI.captureMode=b.dataset.v; render(); },
   fatigue(b){ capFatigue=+b.dataset.v; document.querySelectorAll('#capFatigue .chip').forEach(c=>c.classList.toggle('on',c===b)); },
   saveFragment,
-  threadFilter(b){ threadFilter=b.dataset.v; render(); },
+  threadFilter(b){ navigate("#/threads/"+b.dataset.v); },
   newThread(){ sheetNewThread(); },
   createThread(){
     const title=el("ntTitle").value.trim(); if(!title){toast("Title?");return;}
@@ -805,7 +819,7 @@ async function pull(){
     const remote=await r.json();
     const rV=(remote&&remote.meta&&remote.meta.updatedAt)||0;
     const lV=(S.meta&&S.meta.updatedAt)||0;
-    if(rV>lV){ S=migrate(remote); persist(); syncStatus="ok"; syncLast=now(); render(); }
+    if(rV>lV){ S=migrate(remote); persist(); syncStatus="ok"; syncLast=now(); applyHash(); }
     else if(lV>rV){ syncStatus="ok"; await push(true); }
     else { syncStatus="ok"; syncLast=now(); updateHeader(); }
   }catch(e){ syncStatus="offline"; updateHeader(); }
@@ -852,7 +866,8 @@ document.addEventListener("click", e=>{
    stale device kept clobbering the synced state on every open. The server (Mini)
    is the source of truth; new devices start empty and pull it. */
 
-render();
+window.addEventListener("hashchange", applyHash);
+applyHash();      // route from the URL (defaults to #/capture)
 initSync();
 </script>
 </body>
