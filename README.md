@@ -42,8 +42,8 @@ To let you **think in fragments, have AI carry the thread, and stay coherent acr
 Capture · threads · sorted-criteria enforcement · Claude prompt export · coherence check · backup · self-hosted sync.
 
 ## Phase 2 — friction reducers (built)
-- **Voice capture** — mic button using the Web Speech API where supported; on iOS, the keyboard's dictation key covers any text field (a tip is shown when in-app voice isn't available).
-- **Auto-suggest thread assignment** — as you type a fragment, Loom suggests which active thread it likely belongs to (client-side keyword match with light plural-stemming; fails safe — suggests nothing rather than mis-filing). One tap to attach.
+- **Voice capture** — mic button using the Web Speech API where supported, with an **EN / 粵 language toggle** (English / Cantonese `yue-Hant-HK`). On iOS the keyboard's dictation key covers any field and supports Cantonese if enabled in iOS dictation settings.
+- **Auto-suggest thread assignment** — as you type a fragment, Loom suggests which active thread it likely belongs to. **Bilingual:** Latin words (with light plural-stemming) + CJK character-bigram indexing, so Cantonese/Chinese fragments route too. Fails safe — suggests nothing rather than mis-filing. One tap to attach.
 - **Structured markdown export** — "Copy thread as markdown" (per thread) and "Copy all as markdown" (Global) produce clean, paste-ready context for the Claude app.
 
 All Phase 2 work is client-side — no new dependency, no API key, no added cost.
