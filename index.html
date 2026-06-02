@@ -236,9 +236,7 @@ function coherencePrompt(){
     const last = threadFragments(t.id).slice(-2).map(f=>f.body).join(" / ") || "(no fragments)";
     return `  - "${t.title}" [${p?p.name:"no project"} / ${domainLabel(t.domain)}, depth ${t.depthLevel}, ${ago(t.lastActivityAt)}]\n      recent: ${last}`;
   }).join("\n") : "  (no active threads)";
-  return `You are auditing the COHERENCE of my life across projects. Two axes:
- • VERTICAL — does each project / active thread still serve my global life goals?
- • HORIZONTAL — do my projects coexist, or are any pulling against each other (time, money, energy, values)?
+  return `You are auditing the COHERENCE of my life at THREE levels. Be a rigorous critic, not a cheerleader.
 
 ${globalBlock()}
 
@@ -248,11 +246,16 @@ ${projTxt}
 ## MY ACTIVE THREADS (live decisions in flight)
 ${threadTxt}
 
+## CHECK ALL THREE LEVELS
+A) WITHIN MY FRAME (global vs itself) — Are my life goals mutually consistent, or do any pull against each other (e.g. frugality vs. generously supporting family; financial independence vs. close relationships; "alone is fine" vs. interdependence)? Do my stated thinking models actually fit these goals, or am I keeping models I don't really live by? Name any internal tension or contradiction in the frame itself.
+B) FRAME vs PROJECTS (vertical) — Does each project / active thread genuinely serve a life goal? Where is something drifting from a goal I claim matters? If I have no projects/threads yet, instead tell me: what projects do these life goals IMPLY I should have, and which goal currently has nothing serving it?
+C) PROJECT vs PROJECT (horizontal) — Do my projects / threads compete or contradict each other for time, money, energy, or values?
+
 ## OUTPUT
-1. CONFLICTS — pairs of projects/threads that compete or contradict. For each: what's the tension, and the sharpest question to resolve it.
-2. DRIFT — any project/thread whose recent direction no longer serves a stated life goal. Name the goal it's drifting from.
-3. BLIND SPOT — the one thing I'm likely avoiding because it's uncomfortable.
-Be specific and reference items by name. Prioritize: lead with the single most important issue. Reply in the language my entries are written in.`;
+- Lead with the single most important incoherence across any level.
+- Then the rest, each with: the tension, which goals/projects/threads it's between, and the one sharpest question to resolve it.
+- End with the blind spot I'm most likely avoiding because it's uncomfortable.
+Reference items by name. Reply in the language my entries are written in.`;
 }
 
 /* ============================================================
@@ -549,6 +552,11 @@ function viewGlobal(){
   <button class="ghost" data-act="addGoal" style="width:100%;margin-top:4px">+ Add life goal</button>
   <h2>Thinking models</h2>${models}
   <button class="ghost" data-act="addModel" style="width:100%;margin-top:4px">+ Add thinking model</button>
+  <h2>Coherence</h2>
+  <div class="card">
+    <div class="sm muted">Audit your life for coherence at three levels: your frame against itself (do your goals &amp; models conflict?), your projects against your goals, and your projects against each other. Copies a prompt to paste into Claude.</div>
+    <div class="btnrow" style="margin-top:12px"><button class="primary grow" data-act="coherence">◇ Coherence check → Claude</button></div>
+  </div>
   <h2>Sync &amp; data</h2>
   ${SYNC?`<div class="card">
     <div class="row"><span class="grow" style="font-weight:500">Self-hosted sync</span><span class="pill ${syncStatus==='offline'?'':'active'}" style="${syncStatus==='offline'?'color:var(--warn)':''}">${syncStatus==='ok'?'✓ synced':syncStatus==='offline'?'⚠ offline':syncStatus==='syncing'?'syncing…':'ready'}</span></div>
