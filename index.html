@@ -244,7 +244,15 @@ function coherencePrompt(){
     const last = threadFragments(t.id).slice(-2).map(f=>f.body).join(" / ") || "(no fragments)";
     return `  - "${t.title}" [${p?p.name:"no project"} / ${domainLabel(t.domain)}, depth ${t.depthLevel}, ${ago(t.lastActivityAt)}]\n      recent: ${last}`;
   }).join("\n") : "  (no active threads yet)";
-  return `You are auditing the COHERENCE of my life at THREE levels. Be a rigorous critic, not a cheerleader.
+  const CMAX=40;
+  const closedAll = S.threads.filter(t=>t.status!=="active" && t.outcome).sort((a,b)=>(b.sortedAt||b.lastActivityAt)-(a.sortedAt||a.lastActivityAt));
+  const closed = closedAll.slice(0,CMAX);
+  const cNote = closedAll.length>CMAX ? `  …(${closedAll.length-CMAX} older resolved threads omitted)\n` : "";
+  const closedTxt = closed.length ? cNote+closed.map(t=>{
+    const o=t.outcome;
+    return `  - "${t.title}" → ${(o.type||"").toUpperCase()}: ${o.content}${o.deadline?` (by ${fmtDate(o.deadline)})`:""}`;
+  }).join("\n") : "  (nothing resolved yet)";
+  return `You are auditing the COHERENCE of my life. Be a rigorous critic, not a cheerleader.
 
 ${globalBlock()}
 
@@ -254,10 +262,14 @@ ${projTxt}
 ## MY ACTIVE THREADS (live decisions in flight)
 ${threadTxt}
 
-## CHECK ALL THREE LEVELS
+## RESOLVED HISTORY (what I've already decided / acted on / killed / parked — and why)
+${closedTxt}
+
+## CHECK ALL THREE LEVELS (+ my history)
 A) WITHIN MY FRAME (global vs itself) — Are my life goals mutually consistent, or do any pull against each other (e.g. frugality vs. generously supporting family; financial independence vs. close relationships; "alone is fine" vs. interdependence)? Do my stated thinking models actually fit these goals, or am I keeping models I don't really live by? Name any internal tension or contradiction in the frame itself.
 B) FRAME vs PROJECTS (vertical) — Does each project / active thread genuinely serve a life goal? Where is something drifting from a goal I claim matters? If I have no projects/threads yet, instead tell me: what projects do these life goals IMPLY I should have, and which goal currently has nothing serving it?
 C) PROJECT vs PROJECT (horizontal) — Do my projects / threads compete or contradict each other for time, money, energy, or values?
+D) PATTERN & CONSISTENCY (vs my RESOLVED HISTORY) — Am I reopening or repeating something I already killed (and what was the stated reason)? Does any active thread contradict a decision I already made? Is a parked thread's wake-up condition now met? Call out repetition and rationalization.
 
 ## OUTPUT
 - Lead with the single most important incoherence across any level.
