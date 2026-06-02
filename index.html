@@ -325,6 +325,23 @@ function capInput(){
   if(!matches.length){ sug.innerHTML=""; return; }
   sug.innerHTML=`<div class="sm muted" style="margin:8px 2px 4px">Looks like it belongs to:</div><div class="chips">`+matches.map(t=>`<span class="chip" data-act="pickSuggest" data-tid="${t.id}">↳ ${esc(t.title)}</span>`).join("")+`</div>`;
 }
+function fragmentText(f){
+  const t = thread(f.threadId);
+  const p = t ? project(t.projectId) : null;
+  const fatigue = f.fatigueLevel ? ["fresh","ok","fried"][f.fatigueLevel-1] : null;
+  const lines = [
+    `Fragment — ${new Date(f.createdAt).toLocaleString()}`,
+    f.type ? `Type: ${f.type}` : null,
+    fatigue ? `Fatigue: ${fatigue}` : null,
+    `Thread: ${t ? t.title : "(unassigned)"}`,
+    p ? `Project: ${p.name} [${domainLabel(p.domain)}]` : null,
+    f.mode ? `Mode: ${f.mode}` : null,
+    f.voiceId ? `Voice note: yes` : null,
+    ``,
+    f.body,
+  ].filter(x => x !== null);
+  return lines.join("\n");
+}
 function threadMarkdown(t){
   const p=project(t.projectId);
   let md=`# ${t.title}\n\n- Domain: ${domainLabel(t.domain)}\n- Status: ${t.status} · depth ${t.depthLevel} (${DEPTHS[t.depthLevel]})\n`;
@@ -920,10 +937,10 @@ const ACT = {
   unpickSuggest(){ const s=el("capThread"); if(s) s.value=""; capInput(); },
   threadMd(b){ copy(threadMarkdown(thread(b.dataset.id))); },
   corpusMd(){ copy(corpusMarkdown()); },
-  copyFragment(b){ const f=S.fragments.find(x=>x.id===b.dataset.id); if(f) copy(f.body); },
+  copyFragment(b){ const f=S.fragments.find(x=>x.id===b.dataset.id); if(f) copy(fragmentText(f)); },
   copyThread(b){ const t=thread(b.dataset.id); if(t) copy(threadMarkdown(t)); },
-  copyGoal(b){ copy(S.global.goals[+b.dataset.i]||""); },
-  copyModel(b){ copy(S.global.models[+b.dataset.i]||""); },
+  copyGoal(b){ const g=S.global.goals[+b.dataset.i]; if(g!=null) copy("Life goal:\n"+g); },
+  copyModel(b){ const m=S.global.models[+b.dataset.i]; if(m!=null) copy("Thinking model:\n"+m); },
   closeSheet(){ closeSheet(); },
   scrimClose(){ closeSheet(); },
 };
