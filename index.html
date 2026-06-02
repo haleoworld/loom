@@ -388,6 +388,28 @@ function showTranscriptConfirm(text, audioId, bytes){
 }
 function deleteAudio(id){ if(!id || !(SYNC&&SYNC.audio)) return; fetch(SYNC.audio+"/"+encodeURIComponent(id),{method:"DELETE",headers:{Authorization:"Bearer "+SYNC.token}}).catch(()=>{}); }
 
+/* summarize the capture text via the small local LLM on the Mini */
+let sumOriginal = "";
+async function runSummarize(text){
+  try{
+    const r=await fetch(SYNC.summarize,{method:"POST",headers:{Authorization:"Bearer "+SYNC.token,"Content-Type":"application/json"},body:JSON.stringify({text})});
+    if(!r.ok) throw new Error(r.status);
+    const j=await r.json();
+    showSummaryConfirm(j.summary||"");
+  }catch(e){ toast("Summarize failed — try again, or it's still loading the model"); }
+}
+function showSummaryConfirm(summary){
+  openSheet("Summary of your note", `
+    <p class="muted sm">A clearer version of what you wrote — edit if you like, then Accept to replace your text.</p>
+    <textarea id="smText" rows="6">${esc(summary)}</textarea>
+    <div class="btnrow" style="margin-top:14px">
+      <button class="primary grow" data-act="acceptSummary">Accept</button>
+      <button class="grow" data-act="trySummaryAgain">Try again</button>
+      <button class="ghost" data-act="discardSummary">Discard</button>
+    </div>
+  `);
+}
+
 /* ============================================================
    RENDER
    ============================================================ */
@@ -411,7 +433,7 @@ function render(){
   else if(UI.tab==="global") html=viewGlobal();
   else if(UI.tab==="thread") html=viewThread();
   el("main").innerHTML = html;
-  if(UI.tab==="global" && recordOK()){ try{ ACT.audioRefresh(); }catch(e){} }
+  if(UI.tab==="global" && SYNC && SYNC.audio){ try{ ACT.audioRefresh(); }catch(e){} }
   // nav
   el("nav").innerHTML = NAV.map(([k,ic,lbl])=>{
     const on = (UI.tab===k || (UI.tab==="thread"&&k==="threads") || (UI.tab==="project"&&k==="projects")) ? "on":"";
@@ -433,6 +455,7 @@ function viewCapture(){
   <div class="card">
     <div style="position:relative">
       <textarea id="capBody" rows="4" placeholder="What just happened, what you're thinking, an observation…" oninput="capInput()" autofocus>${esc(capDraft)}</textarea>
+      ${(SYNC&&SYNC.summarize)?`<button id="sumBtn" class="sm ghost" data-act="summarize" style="position:absolute;right:74px;bottom:10px;min-height:32px;padding:4px 10px">✦ Sum</button>`:""}
       ${recordOK()?`<button id="recBtn" class="sm ghost" data-act="record" style="position:absolute;right:8px;bottom:10px;min-height:32px;padding:4px 12px">● Rec</button>`:""}
     </div>
     <div id="recStatus" class="sm muted" style="margin:5px 2px 0"></div>
@@ -626,11 +649,12 @@ function viewGlobal(){
   <details class="card"><summary class="sm muted" style="cursor:pointer">📖 View the workflow diagram</summary>
     <img src="${(SYNC&&SYNC.scope)||''}docs/workflow.svg" alt="Loom workflow" style="width:100%;margin-top:10px;border-radius:10px"/>
   </details>
-  ${recordOK()?`<h2>Voice recordings</h2>
+  ${(SYNC&&SYNC.audio)?`<h2>Voice recordings</h2>
   <div class="card">
     <div class="sm muted">Voice clips are kept on the Mini (never synced) so you can re-transcribe later. Deleting them is always safe — your transcribed text stays.</div>
     <div id="audioStat" class="sm" style="margin-top:8px">—</div>
-    <div class="btnrow" style="margin-top:12px"><button class="grow" data-act="audioRefresh">⟳ Check usage</button><button class="grow danger" data-act="audioPurge">Delete all audio</button></div>
+    <div id="audioList"></div>
+    <div class="btnrow" style="margin-top:12px"><button class="grow" data-act="audioRefresh">⟳ Refresh</button><button class="grow danger" data-act="audioPurge">Delete all audio</button></div>
   </div>`:""}
   <h2>Sync &amp; data</h2>
   ${SYNC?`<div class="card">
@@ -862,7 +886,26 @@ const ACT = {
   reRecord(){ deleteAudio(el("tcAudio").value); closeSheet(); recordToggle(); },
   useTranscript(){ const t=el("tcText").value.trim(); const ta=el("capBody"); if(ta){ ta.value = ta.value.trim() ? (ta.value.trim()+" "+t) : t; } const aid=el("tcAudio").value; pendingAudio = aid ? {id:aid, bytes:+(el("tcBytes").value||0)} : null; closeSheet(); if(ta){ capInput(); ta.focus(); } },
   discardTranscript(){ deleteAudio(el("tcAudio").value); closeSheet(); setRecStatus(""); toast("Recording discarded & deleted"); },
-  async audioRefresh(){ const e=el("audioStat"); if(!(SYNC&&SYNC.audio)){ if(e)e.textContent="(needs the Mini)"; return; } if(e)e.textContent="checking…"; try{ const r=await fetch(SYNC.audio+"/stats",{headers:{Authorization:"Bearer "+SYNC.token}}); const j=await r.json(); if(e)e.textContent=`${j.count} clip${j.count===1?"":"s"} · ${(j.bytes/1048576).toFixed(1)} MB on the Mini`; }catch(x){ if(e)e.textContent="(couldn't reach the Mini)"; } },
+  async audioRefresh(){
+    const e=el("audioStat"), list=el("audioList");
+    if(!(SYNC&&SYNC.audio)){ if(e)e.textContent="(needs the Mini)"; return; }
+    if(e)e.textContent="checking…";
+    try{
+      const r=await fetch(SYNC.audio+"/list",{headers:{Authorization:"Bearer "+SYNC.token}});
+      const arr=await r.json();
+      const bytes=arr.reduce((s,a)=>s+(a.bytes||0),0);
+      if(e)e.textContent=`${arr.length} clip${arr.length===1?"":"s"} · ${(bytes/1048576).toFixed(1)} MB on the Mini`;
+      if(list) list.innerHTML = arr.length ? arr.map(a=>{
+        const url=SYNC.audio+"/"+encodeURIComponent(a.name)+"?t="+encodeURIComponent(SYNC.token);
+        return `<div class="card" style="padding:10px;margin-top:8px"><div class="row sm" style="gap:8px"><span class="grow truncate">${esc(a.name)}</span><span class="faint">${(a.bytes/1024).toFixed(0)} KB</span><button class="sm ghost danger" data-act="audioDelOne" data-id="${esc(a.name)}">✕</button></div><audio controls preload="none" src="${url}" style="width:100%;margin-top:8px;height:34px"></audio></div>`;
+      }).join("") : `<div class="muted sm" style="margin-top:8px">No recordings stored.</div>`;
+    }catch(x){ if(e)e.textContent="(couldn't reach the Mini)"; }
+  },
+  async audioDelOne(b){ if(!confirm("Delete this recording?")) return; await fetch(SYNC.audio+"/"+encodeURIComponent(b.dataset.id),{method:"DELETE",headers:{Authorization:"Bearer "+SYNC.token}}).catch(()=>{}); ACT.audioRefresh(); },
+  summarize(){ const ta=el("capBody"); const text=(ta?ta.value:"").trim(); if(!text){ toast("Type or record something first"); return; } if(!(SYNC&&SYNC.summarize)){ toast("Summarize needs the Mini"); return; } sumOriginal=text; toast("✦ summarizing on your Mini… (a few seconds)"); runSummarize(text); },
+  trySummaryAgain(){ closeSheet(); toast("✦ trying again…"); runSummarize(sumOriginal); },
+  acceptSummary(){ const v=el("smText").value.trim(); const ta=el("capBody"); if(ta&&v){ ta.value=v; } capDraft = ta?ta.value:v; closeSheet(); capInput(); if(ta)ta.focus(); toast("Replaced with summary"); },
+  discardSummary(){ closeSheet(); },
   audioPurge(){ if(!(SYNC&&SYNC.audio)) return; if(!confirm("Permanently delete ALL stored voice audio on the Mini? Your transcribed text stays.")) return; fetch(SYNC.audio,{method:"DELETE",headers:{Authorization:"Bearer "+SYNC.token}}).then(r=>r.json()).then(j=>{ toast("Deleted "+j.deleted+" audio file(s)"); ACT.audioRefresh(); }).catch(()=>toast("Delete failed")); },
   pickSuggest(b){ const s=el("capThread"); if(s) s.value=b.dataset.tid; capInput(); },
   unpickSuggest(){ const s=el("capThread"); if(s) s.value=""; capInput(); },

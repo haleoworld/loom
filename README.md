@@ -45,8 +45,11 @@ Capture · threads · sorted-criteria enforcement · Claude prompt export · coh
 - **Voice capture** — a **● Rec** button records audio on the device, uploads it to the Mini, and transcribes with **local MLX Whisper (medium)** via `~/.loom/transcribe.py` — **auto-detecting English vs Cantonese**, so no language toggle. The medium model is **shared with another project's cache (no duplicate model download)**; `mlx-whisper` lives in `~/.loom/venv`. A "Is this what you said?" panel lets you edit/confirm before it lands in the box. Works on iOS (recording is allowed even though live recognition isn't). Keyboard dictation remains as an alternative. Audio is stored on the Mini (never synced); Global → Voice recordings shows usage + a "Delete all audio" button. Endpoints: `POST /transcribe`, `GET /audio/stats`, `DELETE /audio`.
 - **Auto-suggest thread assignment** — as you type a fragment, Loom suggests which active thread it likely belongs to. **Bilingual:** Latin words (with light plural-stemming) + CJK character-bigram indexing, so Cantonese/Chinese fragments route too. Fails safe — suggests nothing rather than mis-filing. One tap to attach.
 - **Structured markdown export** — "Copy thread as markdown" (per thread) and "Copy all as markdown" (Global) produce clean, paste-ready context for the Claude app.
+- **Summarize (✦ Sum)** — clarifies the capture box via a **small local LLM** (Qwen2.5-3B-4bit MLX, in `~/.loom/venv` + `~/.loom/summarize.py`); shows Accept / Try again / Discard; Accept replaces the box text. Private, no API. `POST /summarize`.
+- **Recordings list + playback** — Global → Voice recordings lists each stored clip with size, an inline player (`<audio>`, token-in-query so it streams), and per-clip delete, plus "Delete all audio". `GET /audio/list`, `GET /audio/<id>`.
+- **Editable everything** — fragments, threads, projects, life goals, and thinking models can all be edited and deleted after the fact (deleting a voice fragment also deletes its clip).
 
-All Phase 2 work is client-side — no new dependency, no API key, no added cost.
+Transcription + summarization run locally on the Mini (private). Auto-suggest, export, routing, and editing are client-side.
 
 ## Not built yet
 Held until this has been lived in for a few weeks (per the proposal): automated weekly synthesis, the dashboard, the re-org ritual UI, cross-thread pattern detection, and the (optional, ongoing-cost) Claude-API integration that would return the Engage-AI question straight into the thread. See the proposal for the full roadmap.

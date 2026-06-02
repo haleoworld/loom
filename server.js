@@ -10,7 +10,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
-const { execFile } = require("child_process");
+const { execFile, spawn } = require("child_process");
 
 const PORT = process.env.LOOM_PORT ? +process.env.LOOM_PORT : 8743;
 const BASE = process.env.LOOM_BASE || "/loom";   // browser-facing Tailscale mount path
@@ -23,6 +23,7 @@ const AUDIO_DIR = path.join(DATA_DIR, "audio");
 // the other project — no duplicate model. mlx_whisper decodes audio via ffmpeg.
 const PY = process.env.LOOM_PY || path.join(DATA_DIR, "venv", "bin", "python");
 const TRANSCRIBE_PY = path.join(DATA_DIR, "transcribe.py");
+const SUMMARIZE_PY = path.join(DATA_DIR, "summarize.py");
 const BIN_PATH = "/opt/homebrew/bin:" + (process.env.PATH || "");  // so mlx_whisper finds ffmpeg
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -35,12 +36,8 @@ catch (e) { TOKEN = crypto.randomBytes(24).toString("hex"); fs.writeFileSync(TOK
 
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png" };
 
-function authed(req) {
-  const h = req.headers["authorization"] || "";
-  const got = h.startsWith("Bearer ") ? h.slice(7) : "";
-  if (got.length !== TOKEN.length) return false;
-  try { return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(TOKEN)); } catch (e) { return false; }
-}
+function eqToken(s) { try { return s.length === TOKEN.length && crypto.timingSafeEqual(Buffer.from(s), Buffer.from(TOKEN)); } catch (e) { return false; } }
+function authed(req) { const h = req.headers["authorization"] || ""; return eqToken(h.startsWith("Bearer ") ? h.slice(7) : ""); }
 function cors(res, req) {
   res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS");
@@ -63,6 +60,8 @@ const server = http.createServer((req, res) => {
   let urlPath = decodeURIComponent((req.url || "/").split("?")[0]);
   urlPath = urlPath.replace(/^\/loom(?=\/|$)/, "");
   if (urlPath === "") urlPath = "/";
+  const qTok = decodeURIComponent(((/[?&]t=([^&]+)/.exec(req.url || "")) || [])[1] || "");
+  const authedAny = () => authed(req) || eqToken(qTok);   // header OR ?t= (for <audio> playback)
 
   // ---- data API ----
   if (urlPath === "/data") {
@@ -118,12 +117,54 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  // ---- summarize note text with a small local LLM ----
+  if (urlPath === "/summarize" && req.method === "POST") {
+    if (!authed(req)) return send(res, 401, "unauthorized");
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 1024 * 1024) req.destroy(); });
+    req.on("end", () => {
+      let text = "";
+      try { text = JSON.parse(body || "{}").text || ""; } catch (e) { text = body; }
+      text = String(text).trim();
+      if (!text) return send(res, 400, JSON.stringify({ error: "empty" }), TYPES[".json"]);
+      const child = spawn(PY, [SUMMARIZE_PY], { env: Object.assign({}, process.env, { PATH: BIN_PATH }) });
+      let out = "", er = "";
+      child.stdout.on("data", d => { out += d; });
+      child.stderr.on("data", d => { er += d; });
+      child.on("error", () => send(res, 500, JSON.stringify({ error: "spawn" }), TYPES[".json"]));
+      child.on("close", code => {
+        if (code !== 0) { console.error("[loom] summarize failed:", er.slice(0, 400)); return send(res, 500, JSON.stringify({ error: "summarize" }), TYPES[".json"]); }
+        send(res, 200, JSON.stringify({ summary: out.trim() }), TYPES[".json"]);
+      });
+      child.stdin.write(text); child.stdin.end();
+    });
+    return;
+  }
+
   // ---- voice: audio storage stats / purge ----
   if (urlPath === "/audio/stats" && req.method === "GET") {
     if (!authed(req)) return send(res, 401, "unauthorized");
     let count = 0, bytes = 0;
     try { for (const f of fs.readdirSync(AUDIO_DIR)) { const st = fs.statSync(path.join(AUDIO_DIR, f)); if (st.isFile()) { count++; bytes += st.size; } } } catch (_) {}
     return send(res, 200, JSON.stringify({ count, bytes }), TYPES[".json"]);
+  }
+  if (urlPath === "/audio/list" && req.method === "GET") {
+    if (!authed(req)) return send(res, 401, "unauthorized");
+    const out = [];
+    try { for (const f of fs.readdirSync(AUDIO_DIR)) { const st = fs.statSync(path.join(AUDIO_DIR, f)); if (st.isFile()) out.push({ name: f, bytes: st.size, mtime: st.mtimeMs }); } } catch (_) {}
+    out.sort((a, b) => b.mtime - a.mtime);
+    return send(res, 200, JSON.stringify(out), TYPES[".json"]);
+  }
+  if (urlPath.startsWith("/audio/") && req.method === "GET") {   // stream one clip for playback
+    if (!authedAny()) return send(res, 401, "unauthorized");
+    const name = path.basename(urlPath.slice(7));
+    const f = path.join(AUDIO_DIR, name);
+    if (!f.startsWith(AUDIO_DIR + path.sep)) return send(res, 403, "no");
+    return fs.readFile(f, (e, buf) => {
+      if (e) return send(res, 404, "not found");
+      const ct = { ".m4a": "audio/mp4", ".mp4": "audio/mp4", ".webm": "audio/webm", ".ogg": "audio/ogg", ".wav": "audio/wav" }[path.extname(f).toLowerCase()] || "application/octet-stream";
+      send(res, 200, buf, ct);
+    });
   }
   if (urlPath.startsWith("/audio/") && urlPath !== "/audio/stats" && req.method === "DELETE") {
     if (!authed(req)) return send(res, 401, "unauthorized");
@@ -152,7 +193,7 @@ const server = http.createServer((req, res) => {
     const ext = path.extname(full).toLowerCase();
     if (ext === ".html") {
       // inject sync config so the app on the tailnet just works, no token typing
-      const cfg = `<script>window.LOOM_SYNC=${JSON.stringify({ token: TOKEN, url: BASE + "/data", sw: BASE + "/sw.js", scope: BASE + "/", transcribe: BASE + "/transcribe", audio: BASE + "/audio" })};</script>`;
+      const cfg = `<script>window.LOOM_SYNC=${JSON.stringify({ token: TOKEN, url: BASE + "/data", sw: BASE + "/sw.js", scope: BASE + "/", transcribe: BASE + "/transcribe", audio: BASE + "/audio", summarize: BASE + "/summarize" })};</script>`;
       const html = buf.toString("utf8").replace("<!--LOOM_CONFIG-->", cfg);
       res.setHeader("Cache-Control", "no-cache");
       return send(res, 200, html, TYPES[".html"]);
