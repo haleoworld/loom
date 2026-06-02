@@ -340,12 +340,12 @@ function corpusMarkdown(){
 }
 /* voice — record audio → upload to the Mini → local Whisper (auto-detects English/Cantonese).
    Works on iOS (recording is allowed even though live recognition isn't). */
-const recordOK = !!(SYNC && SYNC.transcribe && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+function recordOK(){ return !!(SYNC && SYNC.transcribe && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder); }  // function (not const) so it reads SYNC at call-time — avoids referencing SYNC before it's declared
 let mediaRec=null, mediaChunks=[], recording=false, pendingAudio=null;
 function setRecStatus(t){ const e=el("recStatus"); if(e) e.textContent=t||""; }
 function updateRec(){ const b=el("recBtn"); if(b){ b.textContent=recording?"⏹ Stop":"● Rec"; b.style.color=recording?"var(--bad)":""; b.style.borderColor=recording?"var(--bad)":""; } }
 async function recordToggle(){
-  if(!recordOK){ toast("Recording needs the Mini — it's offline"); return; }
+  if(!recordOK()){ toast("Recording needs the Mini — it's offline"); return; }
   if(recording){ try{ mediaRec.stop(); }catch(e){} return; }
   let stream;
   try{ stream = await navigator.mediaDevices.getUserMedia({audio:true}); }
@@ -408,7 +408,7 @@ function render(){
   else if(UI.tab==="global") html=viewGlobal();
   else if(UI.tab==="thread") html=viewThread();
   el("main").innerHTML = html;
-  if(UI.tab==="global" && recordOK){ try{ ACT.audioRefresh(); }catch(e){} }
+  if(UI.tab==="global" && recordOK()){ try{ ACT.audioRefresh(); }catch(e){} }
   // nav
   el("nav").innerHTML = NAV.map(([k,ic,lbl])=>{
     const on = (UI.tab===k || (UI.tab==="thread"&&k==="threads") || (UI.tab==="project"&&k==="projects")) ? "on":"";
@@ -430,7 +430,7 @@ function viewCapture(){
   <div class="card">
     <div style="position:relative">
       <textarea id="capBody" rows="4" placeholder="What just happened, what you're thinking, an observation…" oninput="capInput()" autofocus></textarea>
-      ${recordOK?`<button id="recBtn" class="sm ghost" data-act="record" style="position:absolute;right:8px;bottom:10px;min-height:32px;padding:4px 12px">● Rec</button>`:""}
+      ${recordOK()?`<button id="recBtn" class="sm ghost" data-act="record" style="position:absolute;right:8px;bottom:10px;min-height:32px;padding:4px 12px">● Rec</button>`:""}
     </div>
     <div id="recStatus" class="sm muted" style="margin:5px 2px 0"></div>
     <div id="capSuggest"></div>
@@ -618,7 +618,7 @@ function viewGlobal(){
   <details class="card"><summary class="sm muted" style="cursor:pointer">📖 View the workflow diagram</summary>
     <img src="${(SYNC&&SYNC.scope)||''}docs/workflow.svg" alt="Loom workflow" style="width:100%;margin-top:10px;border-radius:10px"/>
   </details>
-  ${recordOK?`<h2>Voice recordings</h2>
+  ${recordOK()?`<h2>Voice recordings</h2>
   <div class="card">
     <div class="sm muted">Voice clips are kept on the Mini (never synced) so you can re-transcribe later. Deleting them is always safe — your transcribed text stays.</div>
     <div id="audioStat" class="sm" style="margin-top:8px">—</div>
