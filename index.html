@@ -292,6 +292,52 @@ D) PATTERN & CONSISTENCY (vs my RESOLVED HISTORY) — Am I reopening or repeatin
 - End with the blind spot I'm most likely avoiding because it's uncomfortable.
 Reference items by name. Reply in the language my entries are written in.`;
 }
+function projectThreadsBlock(p){
+  const ths = S.threads.filter(t=>t.projectId===p.id).sort((a,b)=>b.lastActivityAt-a.lastActivityAt);
+  if(!ths.length) return "  (no threads yet)";
+  return ths.map(t=>{
+    const fr = threadFragments(t.id).slice(-12);
+    const tn = threadTurns(t.id).slice(-4);
+    const fragTxt = fr.length ? fr.map(f=>`    - ${f.body}`).join("\n") : "    (no fragments)";
+    const turnTxt = tn.length ? "\n" + tn.map(x=>`    Q: ${x.question}\n    A: ${x.answer||"(unanswered)"}`).join("\n") : "";
+    const out = t.outcome ? `\n    OUTCOME (${t.outcome.type}): ${t.outcome.content}` : "";
+    return `  THREAD "${t.title}" [${t.status}, depth ${t.depthLevel}]\n${fragTxt}${turnTxt}${out}`;
+  }).join("\n\n");
+}
+function projectQuestionPrompt(p){
+  return `You are my thinking partner for ONE project. Read everything, then output EXACTLY ONE question — the single most useful question to advance this whole project right now. Not a summary.
+
+${globalBlock()}
+
+## THIS PROJECT: ${p.name} [${domainLabel(p.domain)}]
+Goal: ${p.goal||"(not set)"}
+My role: ${p.role||"(not set)"}
+
+${siblingProjectsBlock(p.id)}
+
+## EVERY THREAD IN THIS PROJECT (oldest fragments trimmed; recent kept)
+${projectThreadsBlock(p)}
+
+## HOW TO CHOOSE THE QUESTION
+- A thread contradicting another, or drifting from the project goal.
+- A thread stuck/stale, or many observations with no decision (action gap).
+- A risk or stakeholder concern I seem to be avoiding.
+- Repetition of something already resolved.
+- Otherwise: the one move that would most advance the whole project.
+
+## RULES
+- ONE question only. No preamble, no summary, no list.
+- It MUST reference something specific above by name.
+- Reply in the language my entries are written in.
+- End with one line: "Not the right question? Because ___"`;
+}
+function projectMarkdown(p){
+  let md = `# Project: ${p.name} [${domainLabel(p.domain)}]\n- Goal: ${p.goal||"?"}\n- My role: ${p.role||"?"}\n`;
+  const ths = S.threads.filter(t=>t.projectId===p.id).sort((a,b)=>b.lastActivityAt-a.lastActivityAt);
+  md += `\n${ths.length} thread(s).\n`;
+  ths.forEach(t=>{ md += "\n---\n\n" + threadMarkdown(t) + "\n"; });
+  return md;
+}
 
 /* ============================================================
    PHASE 2 — friction reducers: voice capture, thread auto-suggest,
@@ -652,6 +698,10 @@ function viewProject(){
     <label class="fld">My role in it</label><div>${p.role?esc(p.role):'<span class="faint">—</span>'}</div>
     <div class="btnrow" style="margin-top:12px"><button class="sm ghost" data-act="editProject" data-id="${p.id}">Edit</button><button class="sm danger" data-act="deleteProject" data-id="${p.id}">Delete</button></div>
   </div>
+  <div class="btnrow">
+    <button class="primary grow" data-act="projectQuestion" data-id="${p.id}">◆ Question across this project → Claude</button>
+    <button class="ghost" data-act="projectMd" data-id="${p.id}">⧉ Copy project</button>
+  </div>
   <h2>Threads</h2>${tHtml}
   `;
 }
@@ -969,6 +1019,8 @@ const ACT = {
   corpusMd(){ copy(corpusMarkdown()); },
   copyFragment(b){ const f=S.fragments.find(x=>x.id===b.dataset.id); if(f) copy(fragmentText(f)); },
   copyThread(b){ const t=thread(b.dataset.id); if(t) copy(threadMarkdown(t)); },
+  projectQuestion(b){ const p=project(b.dataset.id); if(p) copy(projectQuestionPrompt(p)); },
+  projectMd(b){ const p=project(b.dataset.id); if(p) copy(projectMarkdown(p)); },
   copyGoal(b){ const g=S.global.goals[+b.dataset.i]; if(g!=null) copy("Life goal:\n"+g); },
   copyModel(b){ const m=S.global.models[+b.dataset.i]; if(m!=null) copy("Thinking model:\n"+m); },
   closeSheet(){ closeSheet(); },
