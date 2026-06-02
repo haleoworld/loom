@@ -206,6 +206,13 @@ function threadHistoryBlock(t){
   const turnTxt = turns.length ? tTrim+turns.map(t2=>`  Q: ${t2.question}\n  A: ${t2.answer||"(unanswered)"}`).join("\n\n") : "  (no prior Q&A)";
   return `## THREAD: ${t.title}\nDomain: ${domainLabel(t.domain)} | depth: ${t.depthLevel} (${DEPTHS[t.depthLevel]}) | opened ${ago(t.openedAt)}\n\nFragments fed into it (oldest→newest):\n${fragTxt}\n\nPrior Q&A on this thread:\n${turnTxt}`;
 }
+function relatedResolvedBlock(t){
+  const rel = S.threads.filter(x=>x.id!==t.id && x.status!=="active" && x.outcome && (x.projectId===t.projectId || x.domain===t.domain))
+    .sort((a,b)=>(b.sortedAt||b.lastActivityAt)-(a.sortedAt||a.lastActivityAt)).slice(0,20);
+  if(!rel.length) return "## MY PAST DECISIONS ON RELATED THREADS (same project / domain)\n  (none yet)";
+  return "## MY PAST DECISIONS ON RELATED THREADS (same project / domain — use these to catch repetition or contradiction)\n" +
+    rel.map(x=>`  - "${x.title}" → ${(x.outcome.type||"").toUpperCase()}: ${x.outcome.content}`).join("\n");
+}
 function questionPrompt(t){
   const p = project(t.projectId);
   return `You are my thinking partner. Your job is NOT to summarize. Read everything below, then output EXACTLY ONE question — the single most useful question to advance my thinking on this thread right now.
@@ -218,11 +225,13 @@ ${siblingProjectsBlock(t.projectId)}
 
 ${threadHistoryBlock(t)}
 
+${relatedResolvedBlock(t)}
+
 ## HOW TO CHOOSE THE QUESTION (priority order)
 1. Contradiction: current state conflicts with something I said earlier in this thread → name both, ask which holds.
 2. Coexistence conflict: this thread's likely direction clashes with another project's goal/role above → surface it.
 3. Vertical drift: this thread is drifting from my global life goals → ask the question that re-tests alignment.
-4. Pattern: my reasoning repeats a past approach that didn't work → ask what's different now.
+4. Pattern / repetition: this thread repeats or contradicts one of MY PAST DECISIONS above (especially something I killed) → name it and ask what's different now.
 5. Missing axis: I've only explored one dimension → ask about the unexamined one (e.g. cost of NOT doing it).
 6. Depth probe: I've been "exploring" too long → "What would have to be true for you to decide today?"
 7. Action gap: many observations, no decision → "What decision is this thread waiting for?"
