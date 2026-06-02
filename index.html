@@ -120,7 +120,7 @@
    ============================================================ */
 
 const KEY = "thread.v1";
-const DOMAINS = [
+const DEFAULT_DOMAINS = [
   ["work","Work / Career"],
   ["family-finance","Finance"],
   ["family-parenting","Parenting"],
@@ -142,12 +142,13 @@ function load(){
     const raw = localStorage.getItem(KEY);
     if(raw) return migrate(JSON.parse(raw));
   }catch(e){ console.warn("load failed",e); }
-  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], meta:{lastBackup:0,updatedAt:0} };
+  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], domains:DEFAULT_DOMAINS.map(d=>[d[0],d[1]]), meta:{lastBackup:0,updatedAt:0} };
 }
 function migrate(s){
   s.global = s.global || {models:[],goals:[]};
   s.global.models = s.global.models || []; s.global.goals = s.global.goals || [];
   s.projects = s.projects||[]; s.threads=s.threads||[]; s.fragments=s.fragments||[]; s.turns=s.turns||[];
+  if(!Array.isArray(s.domains) || !s.domains.length) s.domains = DEFAULT_DOMAINS.map(d=>[d[0],d[1]]);
   s.meta = s.meta||{lastBackup:0,updatedAt:0};
   if(s.meta.updatedAt==null) s.meta.updatedAt=0;
   return s;
@@ -160,7 +161,8 @@ function now(){ return Date.now(); }
 /* ---------- helpers ---------- */
 const el = id => document.getElementById(id);
 function esc(s){ return (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-function domainLabel(d){ const m=DOMAINS.find(x=>x[0]===d); return m?m[1]:(d||"—"); }
+function domainLabel(d){ const m=(S.domains||[]).find(x=>x[0]===d); return m?m[1]:(d||"—"); }
+function domainSlug(label){ let base=(label||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,24)||"domain"; let k=base,n=1; while((S.domains||[]).some(d=>d[0]===k)) k=base+"-"+(++n); return k; }
 function project(id){ return S.projects.find(p=>p.id===id); }
 function thread(id){ return S.threads.find(t=>t.id===id); }
 function threadFragments(id){ return S.fragments.filter(f=>f.threadId===id).sort((a,b)=>a.createdAt-b.createdAt); }
@@ -662,6 +664,14 @@ function viewGlobal(){
   <button class="ghost" data-act="addGoal" style="width:100%;margin-top:4px">+ Add life goal</button>
   <h2>Thinking models</h2>${models}
   <button class="ghost" data-act="addModel" style="width:100%;margin-top:4px">+ Add thinking model</button>
+  <h2>Domains</h2>
+  <div class="card">
+    <div class="sm muted">The life areas your projects and threads are tagged with. Edit these to fit your life.</div>
+    <div class="chips" style="margin-top:10px">
+      ${S.domains.map((d,i)=>`<span class="chip" style="gap:6px">${esc(d[1])} <span data-act="editDomain" data-i="${i}" style="cursor:pointer">✎</span> <span data-act="delDomain" data-i="${i}" style="cursor:pointer;color:var(--bad)">✕</span></span>`).join("")}
+    </div>
+    <button class="ghost" data-act="addDomain" style="width:100%;margin-top:10px">+ Add domain</button>
+  </div>
   <h2>My life (threads not under any project)</h2>
   ${(()=>{ const life=S.threads.filter(t=>!t.projectId && t.status==="active").sort((a,b)=>b.lastActivityAt-a.lastActivityAt);
     return life.length ? life.map(t=>`<div class="card tap" data-act="openThread" data-id="${t.id}"><div class="row"><span class="dot ${t.status}"></span><span class="grow truncate">${esc(t.title)}</span><span class="sm faint">${ago(t.lastActivityAt)}</span><button class="sm ghost" data-act="copyThread" data-id="${t.id}">⧉</button></div></div>`).join("")
@@ -718,7 +728,7 @@ function sheetNewThread(){
     <label class="fld">Title (a question or a line of thinking)</label>
     <input id="ntTitle" placeholder="e.g. Is the VP losing confidence in delivery?" />
     <label class="fld">Domain</label>
-    <select id="ntDomain">${DOMAINS.map(([k,l])=>`<option value="${k}">${l}</option>`).join("")}</select>
+    <select id="ntDomain">${S.domains.map(([k,l])=>`<option value="${k}">${esc(l)}</option>`).join("")}</select>
     <label class="fld">Project (optional)</label>
     <select id="ntProject"><option value="">—</option>${projOpts}</select>
     <div class="btnrow" style="margin-top:16px"><button class="primary grow" data-act="createThread">Create</button><button class="ghost" data-act="closeSheet">Cancel</button></div>
@@ -766,7 +776,7 @@ function sheetProject(p){
   const isNew=!p;
   openSheet(isNew?"New project":"Edit project",`
     <label class="fld">Name</label><input id="pName" value="${p?esc(p.name):""}" placeholder="e.g. Team delivery" />
-    <label class="fld">Domain</label><select id="pDomain">${DOMAINS.map(([k,l])=>`<option value="${k}" ${p&&p.domain===k?"selected":""}>${l}</option>`).join("")}</select>
+    <label class="fld">Domain</label><select id="pDomain">${S.domains.map(([k,l])=>`<option value="${k}" ${p&&p.domain===k?"selected":""}>${esc(l)}</option>`).join("")}</select>
     <label class="fld">Goal (north star)</label><textarea id="pGoal" rows="2" placeholder="What this project is ultimately for">${p?esc(p.goal||""):""}</textarea>
     <label class="fld">My role in it</label><textarea id="pRole" rows="2" placeholder="What you're responsible for / who you must be here">${p?esc(p.role||""):""}</textarea>
     <input type="hidden" id="pId" value="${p?p.id:""}" />
@@ -908,6 +918,11 @@ const ACT = {
   addModel(){ sheetText("Add thinking model","e.g. invert · margin of safety · opportunity cost","saveModel"); },
   saveModel(){ const v=el("stInput").value.trim(); if(v){S.global.models.push(v); save();} closeSheet(); render(); },
   delModel(b){ if(!confirm("Delete this thinking model?")) return; S.global.models.splice(+b.dataset.i,1); save(); render(); },
+  addDomain(){ sheetText("Add domain","e.g. Health · Side project · Community","saveDomain"); },
+  saveDomain(){ const v=el("stInput").value.trim(); if(v){ S.domains.push([domainSlug(v), v]); save(); } closeSheet(); render(); },
+  editDomain(b){ const i=+b.dataset.i; openSheet("Rename domain",`<input id="dmText" value="${esc(S.domains[i][1])}"/><input type="hidden" id="dmIdx" value="${i}"/><div class="btnrow" style="margin-top:14px"><button class="primary grow" data-act="saveDomainEdit">Save</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`); },
+  saveDomainEdit(){ const i=+el("dmIdx").value, v=el("dmText").value.trim(); if(v){ S.domains[i][1]=v; save(); } closeSheet(); render(); },
+  delDomain(b){ const i=+b.dataset.i, key=S.domains[i][0]; const used=S.projects.filter(p=>p.domain===key).length+S.threads.filter(t=>t.domain===key).length; if(!confirm(`Delete this domain?${used?` ${used} item(s) use it — they'll keep showing this label until you re-tag them.`:""}`)) return; S.domains.splice(i,1); save(); render(); },
   export(){ doExport(); },
   import(){ doImport(); },
   syncNow(){ pull(); },
