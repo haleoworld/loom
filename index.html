@@ -169,7 +169,9 @@ function ago(ts){ const d=daysAgo(ts); if(d===0)return"today"; if(d===1)return"1
 
 function toast(msg){ const t=el("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2200); }
 async function copy(text){
-  try{ await navigator.clipboard.writeText(text); toast("📋 Copied — paste into Claude"); }
+  const w = (text.match(/\S+/g)||[]).length;
+  const note = w>3000 ? ` · ${w.toLocaleString()} words (long — consider closing/parking threads)` : ` · ${w.toLocaleString()} words`;
+  try{ await navigator.clipboard.writeText(text); toast("📋 Copied"+note); }
   catch(e){ showCopyFallback(text); }
 }
 function showCopyFallback(text){
@@ -195,10 +197,13 @@ function siblingProjectsBlock(exceptId){
     others.map(p=>`  - ${p.name} [${domainLabel(p.domain)}] — goal: ${p.goal||"?"}; my role: ${p.role||"?"}`).join("\n");
 }
 function threadHistoryBlock(t){
-  const frags = threadFragments(t.id);
-  const turns = threadTurns(t.id);
-  const fragTxt = frags.length ? frags.map(f=>`  [${fmtDate(f.createdAt)}${f.type?", "+f.type:""}] ${f.body}`).join("\n") : "  (no fragments yet)";
-  const turnTxt = turns.length ? turns.map(t2=>`  Q: ${t2.question}\n  A: ${t2.answer||"(unanswered)"}`).join("\n\n") : "  (no prior Q&A)";
+  const FMAX=60, TMAX=30;
+  const allF = threadFragments(t.id), allT = threadTurns(t.id);
+  const frags = allF.slice(-FMAX), turns = allT.slice(-TMAX);
+  const fTrim = allF.length>FMAX ? `  …(${allF.length-FMAX} earlier fragments omitted to keep this manageable)\n` : "";
+  const tTrim = allT.length>TMAX ? `  …(${allT.length-TMAX} earlier Q&A omitted)\n\n` : "";
+  const fragTxt = frags.length ? fTrim+frags.map(f=>`  [${fmtDate(f.createdAt)}${f.type?", "+f.type:""}] ${f.body}`).join("\n") : "  (no fragments yet)";
+  const turnTxt = turns.length ? tTrim+turns.map(t2=>`  Q: ${t2.question}\n  A: ${t2.answer||"(unanswered)"}`).join("\n\n") : "  (no prior Q&A)";
   return `## THREAD: ${t.title}\nDomain: ${domainLabel(t.domain)} | depth: ${t.depthLevel} (${DEPTHS[t.depthLevel]}) | opened ${ago(t.openedAt)}\n\nFragments fed into it (oldest→newest):\n${fragTxt}\n\nPrior Q&A on this thread:\n${turnTxt}`;
 }
 function questionPrompt(t){
@@ -230,12 +235,15 @@ ${threadHistoryBlock(t)}
 }
 function coherencePrompt(){
   const projTxt = S.projects.length ? S.projects.map(p=>`  - ${p.name} [${domainLabel(p.domain)}] — goal: ${p.goal||"?"}; my role: ${p.role||"?"}`).join("\n") : "  (no projects yet)";
-  const actives = activeThreads();
-  const threadTxt = actives.length ? actives.map(t=>{
+  const TMAX=30;
+  const allA = activeThreads().slice().sort((a,b)=>b.lastActivityAt-a.lastActivityAt);
+  const actives = allA.slice(0,TMAX);
+  const aNote = allA.length>TMAX ? `  …(${allA.length-TMAX} more active threads omitted — a lot are open; closing/parking some will sharpen this)\n` : "";
+  const threadTxt = actives.length ? aNote+actives.map(t=>{
     const p=project(t.projectId);
     const last = threadFragments(t.id).slice(-2).map(f=>f.body).join(" / ") || "(no fragments)";
     return `  - "${t.title}" [${p?p.name:"no project"} / ${domainLabel(t.domain)}, depth ${t.depthLevel}, ${ago(t.lastActivityAt)}]\n      recent: ${last}`;
-  }).join("\n") : "  (no active threads)";
+  }).join("\n") : "  (no active threads yet)";
   return `You are auditing the COHERENCE of my life at THREE levels. Be a rigorous critic, not a cheerleader.
 
 ${globalBlock()}
@@ -309,24 +317,51 @@ function corpusMarkdown(){
   [...S.threads].sort((a,b)=>b.lastActivityAt-a.lastActivityAt).forEach(t=>{ md+="\n"+threadMarkdown(t)+"\n\n---\n"; });
   return md;
 }
-/* voice — Web Speech API where supported; iOS falls back to the keyboard mic */
-const SR = (typeof window!=="undefined") && (window.SpeechRecognition||window.webkitSpeechRecognition);
-// iOS exposes the Web Speech object but refuses to run recognition ("service-not-allowed"),
-// especially for Cantonese — so on iOS we hide the in-app mic and use the keyboard's dictation key.
-const isIOS = (typeof navigator!=="undefined") && (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1));
-const voiceOK = !!SR && !isIOS;
-let voiceLang = (typeof localStorage!=="undefined" && localStorage.getItem("loom.voiceLang")) || "en-US";
-let rec=null, recOn=false, recBase="";
-function updateMic(){ const b=el("micBtn"); if(b){ b.classList.toggle("rec",recOn); b.textContent=recOn?"⏹":"🎤"; } }
-function micToggle(){
-  if(!SR) return;
-  if(recOn){ try{rec.stop();}catch(e){} return; }
-  rec=new SR(); rec.lang=voiceLang; rec.interimResults=true; rec.continuous=true;
-  recBase = el("capBody")?el("capBody").value:"";
-  rec.onresult=e=>{ let txt=""; for(let i=e.resultIndex;i<e.results.length;i++) txt+=e.results[i][0].transcript; const ta=el("capBody"); if(ta){ ta.value=(recBase?recBase.replace(/\s*$/,"")+" ":"")+txt; if(e.results[e.results.length-1].isFinal) recBase=ta.value; capInput(); } };
-  rec.onerror=ev=>{ const m=(ev.error==="not-allowed"||ev.error==="service-not-allowed")?"🎤 Mic unavailable here — use your keyboard's dictation key (supports Cantonese)":("🎤 "+(ev.error||"mic error")); toast(m); recOn=false; updateMic(); };
-  rec.onend=()=>{ recOn=false; updateMic(); };
-  try{ rec.start(); recOn=true; updateMic(); toast("🎤 listening… tap ⏹ to stop"); }catch(e){ toast("mic busy"); }
+/* voice — record audio → upload to the Mini → local Whisper (auto-detects English/Cantonese).
+   Works on iOS (recording is allowed even though live recognition isn't). */
+const recordOK = !!(SYNC && SYNC.transcribe && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+let mediaRec=null, mediaChunks=[], recording=false, pendingAudio=null;
+function setRecStatus(t){ const e=el("recStatus"); if(e) e.textContent=t||""; }
+function updateRec(){ const b=el("recBtn"); if(b){ b.textContent=recording?"⏹ Stop":"● Rec"; b.style.color=recording?"var(--bad)":""; b.style.borderColor=recording?"var(--bad)":""; } }
+async function recordToggle(){
+  if(!recordOK){ toast("Recording needs the Mini — it's offline"); return; }
+  if(recording){ try{ mediaRec.stop(); }catch(e){} return; }
+  let stream;
+  try{ stream = await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(e){ toast("🎤 allow microphone access"); return; }
+  mediaChunks=[];
+  try{ mediaRec = new MediaRecorder(stream); }catch(e){ try{ mediaRec = new MediaRecorder(stream,{}); }catch(e2){ toast("recording unsupported"); stream.getTracks().forEach(t=>t.stop()); return; } }
+  mediaRec.ondataavailable=e=>{ if(e.data && e.data.size) mediaChunks.push(e.data); };
+  mediaRec.onstop=async ()=>{
+    recording=false; updateRec();
+    stream.getTracks().forEach(t=>t.stop());
+    if(!mediaChunks.length){ setRecStatus(""); return; }
+    await transcribeBlob(new Blob(mediaChunks,{type:mediaRec.mimeType||"audio/mp4"}));
+  };
+  mediaRec.start(); recording=true; updateRec(); setRecStatus("● recording… tap Stop when done"); toast("● recording…");
+}
+async function transcribeBlob(blob){
+  setRecStatus("transcribing on your Mini…");
+  try{
+    const r=await fetch(SYNC.transcribe,{method:"POST",headers:{Authorization:"Bearer "+SYNC.token,"Content-Type":blob.type||"application/octet-stream"},body:blob});
+    if(!r.ok) throw new Error(r.status);
+    const j=await r.json();
+    setRecStatus("");
+    showTranscriptConfirm(j.text||"", j.audioId, j.bytes);
+  }catch(e){ setRecStatus(""); toast("Transcription failed — try again, or just type"); }
+}
+function showTranscriptConfirm(text, audioId, bytes){
+  openSheet("Is this what you said?", `
+    <p class="muted sm">Edit if needed, then keep it. Language was auto-detected.</p>
+    <textarea id="tcText" rows="5">${esc(text)}</textarea>
+    <input type="hidden" id="tcAudio" value="${esc(audioId||'')}"/>
+    <input type="hidden" id="tcBytes" value="${bytes||0}"/>
+    <div class="btnrow" style="margin-top:14px">
+      <button class="primary grow" data-act="useTranscript">Use this</button>
+      <button class="grow" data-act="reRecord">Re-record</button>
+      <button class="ghost" data-act="discardTranscript">Discard</button>
+    </div>
+  `);
 }
 
 /* ============================================================
@@ -352,6 +387,7 @@ function render(){
   else if(UI.tab==="global") html=viewGlobal();
   else if(UI.tab==="thread") html=viewThread();
   el("main").innerHTML = html;
+  if(UI.tab==="global" && recordOK){ try{ ACT.audioRefresh(); }catch(e){} }
   // nav
   el("nav").innerHTML = NAV.map(([k,ic,lbl])=>{
     const on = (UI.tab===k || (UI.tab==="thread"&&k==="threads") || (UI.tab==="project"&&k==="projects")) ? "on":"";
@@ -373,9 +409,9 @@ function viewCapture(){
   <div class="card">
     <div style="position:relative">
       <textarea id="capBody" rows="4" placeholder="What just happened, what you're thinking, an observation…" oninput="capInput()" autofocus></textarea>
-      ${voiceOK?`<button id="micLang" class="sm ghost" data-act="micLang" style="position:absolute;right:52px;bottom:10px;min-height:32px;padding:4px 8px;font-size:11px">${voiceLang.startsWith("en")?"EN":"粵"}</button>
-      <button id="micBtn" class="sm ghost" data-act="mic" style="position:absolute;right:8px;bottom:10px;min-height:32px;padding:4px 10px">🎤</button>`:""}
+      ${recordOK?`<button id="recBtn" class="sm ghost" data-act="record" style="position:absolute;right:8px;bottom:10px;min-height:32px;padding:4px 12px">● Rec</button>`:""}
     </div>
+    <div id="recStatus" class="sm muted" style="margin:5px 2px 0"></div>
     <div id="capSuggest"></div>
     <div class="seg" style="margin-top:12px">
       <button class="${UI.captureMode==='just_log'?'on':''}" data-act="capMode" data-v="just_log">Just log</button>
@@ -384,7 +420,7 @@ function viewCapture(){
     <p class="muted sm" style="margin:8px 2px 0">${UI.captureMode==='just_log'
       ? "Stored, no question. For tired moments."
       : "On save, I build a one-question prompt for you to paste into Claude."}</p>
-    ${!voiceOK?`<p class="faint sm" style="margin:6px 2px 0">🎤 Tip: tap your keyboard's mic key to dictate — including Cantonese, if it's enabled in iOS dictation settings.</p>`:""}
+    <p class="faint sm" style="margin:6px 2px 0">${recordOK?"● Rec records your voice and transcribes it on your Mini (auto English/粵). Or use your keyboard's mic key.":"🎤 Tip: use your keyboard's mic key to dictate — Cantonese works if enabled in iOS dictation settings."}</p>
 
     <details style="margin-top:12px">
       <summary class="muted sm" style="cursor:pointer">Optional: thread, type, fatigue</summary>
@@ -545,8 +581,8 @@ function viewProject(){
 
 /* ---------- GLOBAL ---------- */
 function viewGlobal(){
-  const goals = S.global.goals.length ? S.global.goals.map((g,i)=>`<div class="card"><div class="row"><span class="grow">${esc(g)}</span><button class="sm ghost" data-act="delGoal" data-i="${i}">✕</button></div></div>`).join("") : `<div class="muted sm">No life goals yet — these are the fixed frame every project must serve.</div>`;
-  const models = S.global.models.length ? S.global.models.map((m,i)=>`<div class="card"><div class="row"><span class="grow">${esc(m)}</span><button class="sm ghost" data-act="delModel" data-i="${i}">✕</button></div></div>`).join("") : `<div class="muted sm">No thinking models yet — e.g. “invert”, “margin of safety”, “opportunity cost”.</div>`;
+  const goals = S.global.goals.length ? S.global.goals.map((g,i)=>`<div class="card"><div class="row"><span class="grow" data-act="editGoal" data-i="${i}" style="cursor:pointer">${esc(g)}</span><button class="sm ghost" data-act="editGoal" data-i="${i}">✎</button><button class="sm ghost" data-act="delGoal" data-i="${i}">✕</button></div></div>`).join("") : `<div class="muted sm">No life goals yet — these are the fixed frame every project must serve.</div>`;
+  const models = S.global.models.length ? S.global.models.map((m,i)=>`<div class="card"><div class="row"><span class="grow" data-act="editModel" data-i="${i}" style="cursor:pointer">${esc(m)}</span><button class="sm ghost" data-act="editModel" data-i="${i}">✎</button><button class="sm ghost" data-act="delModel" data-i="${i}">✕</button></div></div>`).join("") : `<div class="muted sm">No thinking models yet — e.g. “invert”, “margin of safety”, “opportunity cost”.</div>`;
   return `
   <h2>Ultimate life goals</h2>${goals}
   <button class="ghost" data-act="addGoal" style="width:100%;margin-top:4px">+ Add life goal</button>
@@ -557,6 +593,16 @@ function viewGlobal(){
     <div class="sm muted">Audit your life for coherence at three levels: your frame against itself (do your goals &amp; models conflict?), your projects against your goals, and your projects against each other. Copies a prompt to paste into Claude.</div>
     <div class="btnrow" style="margin-top:12px"><button class="primary grow" data-act="coherence">◇ Coherence check → Claude</button></div>
   </div>
+  <h2>How Loom works</h2>
+  <details class="card"><summary class="sm muted" style="cursor:pointer">📖 View the workflow diagram</summary>
+    <img src="${(SYNC&&SYNC.scope)||''}docs/workflow.svg" alt="Loom workflow" style="width:100%;margin-top:10px;border-radius:10px"/>
+  </details>
+  ${recordOK?`<h2>Voice recordings</h2>
+  <div class="card">
+    <div class="sm muted">Voice clips are kept on the Mini (never synced) so you can re-transcribe later. Deleting them is always safe — your transcribed text stays.</div>
+    <div id="audioStat" class="sm" style="margin-top:8px">—</div>
+    <div class="btnrow" style="margin-top:12px"><button class="grow" data-act="audioRefresh">⟳ Check usage</button><button class="grow danger" data-act="audioPurge">Delete all audio</button></div>
+  </div>`:""}
   <h2>Sync &amp; data</h2>
   ${SYNC?`<div class="card">
     <div class="row"><span class="grow" style="font-weight:500">Self-hosted sync</span><span class="pill ${syncStatus==='offline'?'':'active'}" style="${syncStatus==='offline'?'color:var(--warn)':''}">${syncStatus==='ok'?'✓ synced':syncStatus==='offline'?'⚠ offline':syncStatus==='syncing'?'syncing…':'ready'}</span></div>
@@ -657,6 +703,14 @@ function sheetAssign(fragId){
 function sheetText(title, placeholder, act){
   openSheet(title,`<textarea id="stInput" rows="3" placeholder="${esc(placeholder)}"></textarea><div class="btnrow" style="margin-top:14px"><button class="primary grow" data-act="${act}">Save</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`);
 }
+function openListEdit(kind, i){
+  const arr = kind==="goal" ? S.global.goals : S.global.models;
+  openSheet(kind==="goal"?"Edit life goal":"Edit thinking model",`
+    <textarea id="leText" rows="6">${esc(arr[i]||"")}</textarea>
+    <input type="hidden" id="leKind" value="${kind}"/><input type="hidden" id="leIdx" value="${i}"/>
+    <div class="btnrow" style="margin-top:14px"><button class="primary grow" data-act="saveListEdit">Save</button><button class="ghost" data-act="closeSheet">Cancel</button></div>
+  `);
+}
 
 /* ============================================================
    ACTIONS
@@ -689,7 +743,10 @@ function saveFragment(){
     threadId: el("capThread")?el("capThread").value||null:null,
     mode: UI.captureMode,
     fatigueLevel: capFatigue||null,
+    voiceId: pendingAudio?pendingAudio.id:null,
+    voiceBytes: pendingAudio?pendingAudio.bytes:0,
   };
+  pendingAudio=null;
   S.fragments.push(f);
   if(f.threadId){ const t=thread(f.threadId); if(t) touch(t); }
   capFatigue=0; save();
@@ -759,15 +816,22 @@ const ACT = {
   deleteProject(b){ if(!confirm("Delete project? Threads keep their data but unlink.")) return; const id=b.dataset.id; S.threads.forEach(t=>{if(t.projectId===id)t.projectId=null;}); S.projects=S.projects.filter(p=>p.id!==id); save(); go("projects"); },
   addGoal(){ sheetText("Add life goal","An ultimate goal everything should serve…","saveGoal"); },
   saveGoal(){ const v=el("stInput").value.trim(); if(v){S.global.goals.push(v); save();} closeSheet(); render(); },
-  delGoal(b){ S.global.goals.splice(+b.dataset.i,1); save(); render(); },
+  editGoal(b){ openListEdit("goal", +b.dataset.i); },
+  editModel(b){ openListEdit("model", +b.dataset.i); },
+  saveListEdit(){ const kind=el("leKind").value, i=+el("leIdx").value, v=el("leText").value.trim(); const arr = kind==="goal"?S.global.goals:S.global.models; if(v) arr[i]=v; save(); closeSheet(); render(); },
+  delGoal(b){ if(!confirm("Delete this life goal?")) return; S.global.goals.splice(+b.dataset.i,1); save(); render(); },
   addModel(){ sheetText("Add thinking model","e.g. invert · margin of safety · opportunity cost","saveModel"); },
   saveModel(){ const v=el("stInput").value.trim(); if(v){S.global.models.push(v); save();} closeSheet(); render(); },
-  delModel(b){ S.global.models.splice(+b.dataset.i,1); save(); render(); },
+  delModel(b){ if(!confirm("Delete this thinking model?")) return; S.global.models.splice(+b.dataset.i,1); save(); render(); },
   export(){ doExport(); },
   import(){ doImport(); },
   syncNow(){ pull(); },
-  mic(){ micToggle(); },
-  micLang(){ voiceLang = voiceLang.startsWith("en") ? "yue-Hant-HK" : "en-US"; try{localStorage.setItem("loom.voiceLang",voiceLang);}catch(e){} const b=el("micLang"); if(b) b.textContent = voiceLang.startsWith("en")?"EN":"粵"; if(recOn){ try{rec.stop();}catch(e){} } },
+  record(){ recordToggle(); },
+  reRecord(){ closeSheet(); recordToggle(); },
+  useTranscript(){ const t=el("tcText").value.trim(); const ta=el("capBody"); if(ta){ ta.value = ta.value.trim() ? (ta.value.trim()+" "+t) : t; } const aid=el("tcAudio").value; pendingAudio = aid ? {id:aid, bytes:+(el("tcBytes").value||0)} : null; closeSheet(); if(ta){ capInput(); ta.focus(); } },
+  discardTranscript(){ closeSheet(); setRecStatus(""); },
+  async audioRefresh(){ const e=el("audioStat"); if(!(SYNC&&SYNC.audio)){ if(e)e.textContent="(needs the Mini)"; return; } if(e)e.textContent="checking…"; try{ const r=await fetch(SYNC.audio+"/stats",{headers:{Authorization:"Bearer "+SYNC.token}}); const j=await r.json(); if(e)e.textContent=`${j.count} clip${j.count===1?"":"s"} · ${(j.bytes/1048576).toFixed(1)} MB on the Mini`; }catch(x){ if(e)e.textContent="(couldn't reach the Mini)"; } },
+  audioPurge(){ if(!(SYNC&&SYNC.audio)) return; if(!confirm("Permanently delete ALL stored voice audio on the Mini? Your transcribed text stays.")) return; fetch(SYNC.audio,{method:"DELETE",headers:{Authorization:"Bearer "+SYNC.token}}).then(r=>r.json()).then(j=>{ toast("Deleted "+j.deleted+" audio file(s)"); ACT.audioRefresh(); }).catch(()=>toast("Delete failed")); },
   pickSuggest(b){ const s=el("capThread"); if(s) s.value=b.dataset.tid; capInput(); },
   unpickSuggest(){ const s=el("capThread"); if(s) s.value=""; capInput(); },
   threadMd(b){ copy(threadMarkdown(thread(b.dataset.id))); },

@@ -42,7 +42,7 @@ To let you **think in fragments, have AI carry the thread, and stay coherent acr
 Capture · threads · sorted-criteria enforcement · Claude prompt export · coherence check · backup · self-hosted sync.
 
 ## Phase 2 — friction reducers (built)
-- **Voice capture** — mic button using the Web Speech API where supported, with an **EN / 粵 language toggle** (English / Cantonese `yue-Hant-HK`). On iOS the keyboard's dictation key covers any field and supports Cantonese if enabled in iOS dictation settings.
+- **Voice capture** — a **● Rec** button records audio on the device, uploads it to the Mini, and transcribes with **local `whisper-cli`** (small model) — **auto-detecting English vs Cantonese**, so no language toggle. A "Is this what you said?" panel lets you edit/confirm before it lands in the box. Works on iOS (recording is allowed even though live recognition isn't). Keyboard dictation remains as an alternative. Audio is stored on the Mini (never synced); Global → Voice recordings shows usage + a "Delete all audio" button. Endpoints: `POST /transcribe`, `GET /audio/stats`, `DELETE /audio`.
 - **Auto-suggest thread assignment** — as you type a fragment, Loom suggests which active thread it likely belongs to. **Bilingual:** Latin words (with light plural-stemming) + CJK character-bigram indexing, so Cantonese/Chinese fragments route too. Fails safe — suggests nothing rather than mis-filing. One tap to attach.
 - **Structured markdown export** — "Copy thread as markdown" (per thread) and "Copy all as markdown" (Global) produce clean, paste-ready context for the Claude app.
 

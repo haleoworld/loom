@@ -10,6 +10,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
+const { execFile } = require("child_process");
 
 const PORT = process.env.LOOM_PORT ? +process.env.LOOM_PORT : 8743;
 const BASE = process.env.LOOM_BASE || "/loom";   // browser-facing Tailscale mount path
@@ -17,15 +18,20 @@ const APP_DIR = __dirname;
 const DATA_DIR = path.join(os.homedir(), ".loom");
 const DATA_FILE = path.join(DATA_DIR, "data.json");
 const TOKEN_FILE = path.join(DATA_DIR, "token");
+const AUDIO_DIR = path.join(DATA_DIR, "audio");
+const MODEL = process.env.LOOM_MODEL || path.join(DATA_DIR, "models", "ggml-small.bin");
+const FFMPEG = process.env.LOOM_FFMPEG || "/opt/homebrew/bin/ffmpeg";
+const WHISPER = process.env.LOOM_WHISPER || "/opt/homebrew/bin/whisper-cli";
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(AUDIO_DIR, { recursive: true });
 
 // token: load or create
 let TOKEN;
 try { TOKEN = fs.readFileSync(TOKEN_FILE, "utf8").trim(); }
 catch (e) { TOKEN = crypto.randomBytes(24).toString("hex"); fs.writeFileSync(TOKEN_FILE, TOKEN, { mode: 0o600 }); }
 
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8" };
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png" };
 
 function authed(req) {
   const h = req.headers["authorization"] || "";
@@ -35,7 +41,7 @@ function authed(req) {
 }
 function cors(res, req) {
   res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,PUT,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Authorization,Content-Type");
   res.setHeader("Vary", "Origin");
 }
@@ -88,6 +94,47 @@ const server = http.createServer((req, res) => {
     return send(res, 405, "method not allowed");
   }
 
+  // ---- voice: transcribe audio with local whisper (auto language) ----
+  if (urlPath === "/transcribe" && req.method === "POST") {
+    if (!authed(req)) return send(res, 401, "unauthorized");
+    const ct = (req.headers["content-type"] || "").toLowerCase();
+    const ext = ct.includes("mp4") || ct.includes("m4a") || ct.includes("aac") ? "m4a"
+              : ct.includes("webm") ? "webm" : ct.includes("ogg") ? "ogg" : ct.includes("wav") ? "wav" : "bin";
+    const id = crypto.randomBytes(8).toString("hex");
+    const raw = path.join(AUDIO_DIR, id + "." + ext);
+    const ws = fs.createWriteStream(raw);
+    let size = 0, tooBig = false;
+    req.on("data", c => { size += c.length; if (size > 50 * 1024 * 1024) { tooBig = true; req.destroy(); } });
+    req.on("error", () => { try { ws.destroy(); fs.unlinkSync(raw); } catch (_) {} });
+    req.pipe(ws);
+    ws.on("finish", () => {
+      if (tooBig) { try { fs.unlinkSync(raw); } catch (_) {} return send(res, 413, "too large"); }
+      const wav = path.join(os.tmpdir(), "loom_" + id + ".wav");
+      execFile(FFMPEG, ["-y", "-i", raw, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav], err1 => {
+        if (err1) return send(res, 500, JSON.stringify({ error: "ffmpeg" }), TYPES[".json"]);
+        execFile(WHISPER, ["-m", MODEL, "-f", wav, "-nt", "-l", "auto"], { maxBuffer: 16 * 1024 * 1024 }, (err2, stdout) => {
+          try { fs.unlinkSync(wav); } catch (_) {}
+          if (err2) return send(res, 500, JSON.stringify({ error: "whisper" }), TYPES[".json"]);
+          send(res, 200, JSON.stringify({ text: (stdout || "").trim(), audioId: id + "." + ext, bytes: size }), TYPES[".json"]);
+        });
+      });
+    });
+    return;
+  }
+  // ---- voice: audio storage stats / purge ----
+  if (urlPath === "/audio/stats" && req.method === "GET") {
+    if (!authed(req)) return send(res, 401, "unauthorized");
+    let count = 0, bytes = 0;
+    try { for (const f of fs.readdirSync(AUDIO_DIR)) { const st = fs.statSync(path.join(AUDIO_DIR, f)); if (st.isFile()) { count++; bytes += st.size; } } } catch (_) {}
+    return send(res, 200, JSON.stringify({ count, bytes }), TYPES[".json"]);
+  }
+  if (urlPath === "/audio" && req.method === "DELETE") {
+    if (!authed(req)) return send(res, 401, "unauthorized");
+    let n = 0;
+    try { for (const f of fs.readdirSync(AUDIO_DIR)) { fs.unlinkSync(path.join(AUDIO_DIR, f)); n++; } } catch (_) {}
+    return send(res, 200, JSON.stringify({ deleted: n }), TYPES[".json"]);
+  }
+
   // ---- static app ----
   if (req.method !== "GET") return send(res, 405, "method not allowed");
   let file = urlPath === "/" ? "index.html" : urlPath.replace(/^\/+/, "");
@@ -100,7 +147,7 @@ const server = http.createServer((req, res) => {
     const ext = path.extname(full).toLowerCase();
     if (ext === ".html") {
       // inject sync config so the app on the tailnet just works, no token typing
-      const cfg = `<script>window.LOOM_SYNC=${JSON.stringify({ token: TOKEN, url: BASE + "/data", sw: BASE + "/sw.js", scope: BASE + "/" })};</script>`;
+      const cfg = `<script>window.LOOM_SYNC=${JSON.stringify({ token: TOKEN, url: BASE + "/data", sw: BASE + "/sw.js", scope: BASE + "/", transcribe: BASE + "/transcribe", audio: BASE + "/audio" })};</script>`;
       const html = buf.toString("utf8").replace("<!--LOOM_CONFIG-->", cfg);
       res.setHeader("Cache-Control", "no-cache");
       return send(res, 200, html, TYPES[".html"]);
