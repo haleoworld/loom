@@ -386,6 +386,7 @@ function showTranscriptConfirm(text, audioId, bytes){
     </div>
   `);
 }
+function deleteAudio(id){ if(!id || !(SYNC&&SYNC.audio)) return; fetch(SYNC.audio+"/"+encodeURIComponent(id),{method:"DELETE",headers:{Authorization:"Bearer "+SYNC.token}}).catch(()=>{}); }
 
 /* ============================================================
    RENDER
@@ -851,9 +852,9 @@ const ACT = {
   import(){ doImport(); },
   syncNow(){ pull(); },
   record(){ recordToggle(); },
-  reRecord(){ closeSheet(); recordToggle(); },
+  reRecord(){ deleteAudio(el("tcAudio").value); closeSheet(); recordToggle(); },
   useTranscript(){ const t=el("tcText").value.trim(); const ta=el("capBody"); if(ta){ ta.value = ta.value.trim() ? (ta.value.trim()+" "+t) : t; } const aid=el("tcAudio").value; pendingAudio = aid ? {id:aid, bytes:+(el("tcBytes").value||0)} : null; closeSheet(); if(ta){ capInput(); ta.focus(); } },
-  discardTranscript(){ closeSheet(); setRecStatus(""); },
+  discardTranscript(){ deleteAudio(el("tcAudio").value); closeSheet(); setRecStatus(""); toast("Recording discarded & deleted"); },
   async audioRefresh(){ const e=el("audioStat"); if(!(SYNC&&SYNC.audio)){ if(e)e.textContent="(needs the Mini)"; return; } if(e)e.textContent="checking…"; try{ const r=await fetch(SYNC.audio+"/stats",{headers:{Authorization:"Bearer "+SYNC.token}}); const j=await r.json(); if(e)e.textContent=`${j.count} clip${j.count===1?"":"s"} · ${(j.bytes/1048576).toFixed(1)} MB on the Mini`; }catch(x){ if(e)e.textContent="(couldn't reach the Mini)"; } },
   audioPurge(){ if(!(SYNC&&SYNC.audio)) return; if(!confirm("Permanently delete ALL stored voice audio on the Mini? Your transcribed text stays.")) return; fetch(SYNC.audio,{method:"DELETE",headers:{Authorization:"Bearer "+SYNC.token}}).then(r=>r.json()).then(j=>{ toast("Deleted "+j.deleted+" audio file(s)"); ACT.audioRefresh(); }).catch(()=>toast("Delete failed")); },
   pickSuggest(b){ const s=el("capThread"); if(s) s.value=b.dataset.tid; capInput(); },

@@ -125,6 +125,14 @@ const server = http.createServer((req, res) => {
     try { for (const f of fs.readdirSync(AUDIO_DIR)) { const st = fs.statSync(path.join(AUDIO_DIR, f)); if (st.isFile()) { count++; bytes += st.size; } } } catch (_) {}
     return send(res, 200, JSON.stringify({ count, bytes }), TYPES[".json"]);
   }
+  if (urlPath.startsWith("/audio/") && urlPath !== "/audio/stats" && req.method === "DELETE") {
+    if (!authed(req)) return send(res, 401, "unauthorized");
+    const name = path.basename(urlPath.slice(7));   // one file, no traversal
+    const f = path.join(AUDIO_DIR, name);
+    let ok = false;
+    if (f.startsWith(AUDIO_DIR + path.sep)) { try { fs.unlinkSync(f); ok = true; } catch (_) {} }
+    return send(res, 200, JSON.stringify({ deleted: ok ? 1 : 0 }), TYPES[".json"]);
+  }
   if (urlPath === "/audio" && req.method === "DELETE") {
     if (!authed(req)) return send(res, 401, "unauthorized");
     let n = 0;
