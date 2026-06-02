@@ -315,7 +315,9 @@ function suggestThreads(text, max){
   }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,max||3).map(x=>x.t);
 }
 function capInput(){
-  const ta=el("capBody"), sug=el("capSuggest"); if(!ta||!sug) return;
+  const ta=el("capBody"); if(!ta) return;
+  capDraft = ta.value;                 // keep the draft so re-renders (mode toggle, tab switch) don't wipe it
+  const sug=el("capSuggest"); if(!sug) return;
   const sel=el("capThread");
   if(sel && sel.value){ const t=thread(sel.value); sug.innerHTML=`<div class="sm" style="margin:8px 2px;color:var(--accent)">→ attaching to “${esc(t?t.title:'')}” <span class="faint" data-act="unpickSuggest" style="cursor:pointer">(undo)</span></div>`; return; }
   const words=ta.value.trim().split(/\s+/).filter(Boolean);
@@ -429,7 +431,7 @@ function viewCapture(){
   <h2>New fragment</h2>
   <div class="card">
     <div style="position:relative">
-      <textarea id="capBody" rows="4" placeholder="What just happened, what you're thinking, an observation…" oninput="capInput()" autofocus></textarea>
+      <textarea id="capBody" rows="4" placeholder="What just happened, what you're thinking, an observation…" oninput="capInput()" autofocus>${esc(capDraft)}</textarea>
       ${recordOK()?`<button id="recBtn" class="sm ghost" data-act="record" style="position:absolute;right:8px;bottom:10px;min-height:32px;padding:4px 12px">● Rec</button>`:""}
     </div>
     <div id="recStatus" class="sm muted" style="margin:5px 2px 0"></div>
@@ -464,6 +466,7 @@ function viewCapture(){
   `;
 }
 let capFatigue = 0;
+let capDraft = "";   // in-memory draft of the capture box, preserved across re-renders
 function recentFragments(){
   const recent = [...S.fragments].sort((a,b)=>b.createdAt-a.createdAt).slice(0,6);
   if(!recent.length) return `<div class="empty"><div class="big">✎</div>Capture a fragment to start.<br>It can join a thread now or later.</div>`;
@@ -775,7 +778,7 @@ function saveFragment(){
     if(f.threadId){ copy(questionPrompt(thread(f.threadId))); }
     else { toast("Saved. Attach to a thread to get a question."); }
   } else { toast("✓ Logged"); }
-  el("capBody").value=""; render();
+  capDraft=""; el("capBody").value=""; render();
 }
 
 const ACT = {
