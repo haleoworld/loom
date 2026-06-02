@@ -479,8 +479,12 @@ function recentFragments(){
         <div class="row sm muted" style="margin-top:8px;gap:8px;flex-wrap:wrap">
           <span>${ago(f.createdAt)}</span>
           ${f.type?`<span class="pill">${f.type}</span>`:""}
+          ${f.voiceId?`<span class="pill">🎙</span>`:""}
           ${t?`<span class="pill active" data-act="openThread" data-id="${t.id}">↳ ${esc(t.title)}</span>`
               :`<button class="sm ghost" data-act="assignFragment" data-id="${f.id}">+ thread</button>`}
+          <span class="grow"></span>
+          <button class="sm ghost" data-act="editFragment" data-id="${f.id}">✎</button>
+          <button class="sm ghost" data-act="deleteFragment" data-id="${f.id}">✕</button>
         </div>
       </div>
     </div>`;
@@ -537,7 +541,7 @@ function viewThread(){
     </div>`;
   }
 
-  const fragHtml = frags.length ? frags.map(f=>`<div class="frag"><div class="body">${esc(f.body)}</div><div class="sm faint" style="margin-top:5px">${fmtDate(f.createdAt)}${f.type?" · "+f.type:""}</div></div>`).join("") : `<div class="muted sm">No fragments yet.</div>`;
+  const fragHtml = frags.length ? frags.map(f=>`<div class="frag"><div class="body">${esc(f.body)}</div><div class="row sm faint" style="margin-top:5px;gap:8px"><span>${fmtDate(f.createdAt)}${f.type?" · "+f.type:""}${f.voiceId?" · 🎙":""}</span><span class="grow"></span><button class="sm ghost" data-act="editFragment" data-id="${f.id}">✎</button><button class="sm ghost" data-act="deleteFragment" data-id="${f.id}">✕</button></div></div>`).join("") : `<div class="muted sm">No fragments yet.</div>`;
   const turnHtml = turns.length ? turns.map(tn=>`<div class="turn"><div class="q">Q: ${esc(tn.question)}</div>${tn.answer?`<div class="a">${esc(tn.answer)}</div>`:`<button class="sm ghost" data-act="answerTurn" data-id="${tn.id}" style="margin-top:6px">+ answer</button>`}</div>`).join("") : `<div class="muted sm">No Q&amp;A yet. Use “Question prompt” → paste into Claude → record the question + your answer.</div>`;
 
   return `
@@ -828,6 +832,9 @@ const ACT = {
   linkProject(b){ const opts=S.projects.map(p=>`<button class="grow" data-act="doLink" data-tid="${b.dataset.id}" data-pid="${p.id}" style="margin-bottom:6px;text-align:left">${esc(p.name)}</button>`).join(""); openSheet("Link project",opts||'<p class="muted sm">No projects yet.</p>'); },
   doLink(b){ const t=thread(b.dataset.tid); if(t){t.projectId=b.dataset.pid; if(project(b.dataset.pid))t.domain=project(b.dataset.pid).domain; save();} closeSheet(); render(); },
   assignFragment(b){ sheetAssign(b.dataset.id); },
+  editFragment(b){ const f=S.fragments.find(x=>x.id===b.dataset.id); if(!f)return; openSheet("Edit fragment",`<textarea id="efText" rows="5">${esc(f.body)}</textarea><input type="hidden" id="efId" value="${f.id}"/><div class="btnrow" style="margin-top:14px"><button class="primary grow" data-act="saveEditFragment">Save</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`); },
+  saveEditFragment(){ const id=el("efId").value, v=el("efText").value.trim(); const f=S.fragments.find(x=>x.id===id); if(f&&v){ f.body=v; const t=thread(f.threadId); if(t)touch(t); save(); } closeSheet(); render(); },
+  deleteFragment(b){ const f=S.fragments.find(x=>x.id===b.dataset.id); if(!f)return; if(!confirm("Delete this fragment? Its audio (if any) is deleted too."))return; if(f.voiceId) deleteAudio(f.voiceId); const t=thread(f.threadId); S.fragments=S.fragments.filter(x=>x.id!==f.id); if(t)touch(t); save(); render(); },
   assignTo(b){ const f=S.fragments.find(x=>x.id===b.dataset.fid); if(f){f.threadId=b.dataset.tid; const t=thread(b.dataset.tid); if(t)touch(t); save();} closeSheet(); render(); },
   newThreadFor(b){ const f=S.fragments.find(x=>x.id===b.dataset.fid); closeSheet(); sheetNewThread(); if(f)setTimeout(()=>{el("ntTitle").value=f.body.slice(0,80);},30); el("modalRoot").dataset.frag=b.dataset.fid; },
   newProject(){ sheetProject(null); },
