@@ -642,6 +642,11 @@ function viewGlobal(){
   <button class="ghost" data-act="addGoal" style="width:100%;margin-top:4px">+ Add life goal</button>
   <h2>Thinking models</h2>${models}
   <button class="ghost" data-act="addModel" style="width:100%;margin-top:4px">+ Add thinking model</button>
+  <h2>My life (threads not under any project)</h2>
+  ${(()=>{ const life=S.threads.filter(t=>!t.projectId && t.status==="active").sort((a,b)=>b.lastActivityAt-a.lastActivityAt);
+    return life.length ? life.map(t=>`<div class="card tap" data-act="openThread" data-id="${t.id}"><div class="row"><span class="dot ${t.status}"></span><span class="grow truncate">${esc(t.title)}</span><span class="sm faint">${ago(t.lastActivityAt)}</span><button class="sm ghost" data-act="copyThread" data-id="${t.id}">⧉</button></div></div>`).join("")
+      : `<div class="muted sm">No life-level threads yet — for thinking about your life as a whole, not a specific project.</div>`; })()}
+  <button class="ghost" data-act="newLifeThread" style="width:100%;margin-top:4px">+ New thread about my life</button>
   <h2>Coherence</h2>
   <div class="card">
     <div class="sm muted">Audit your life for coherence at three levels: your frame against itself (do your goals &amp; models conflict?), your projects against your goals, and your projects against each other. Copies a prompt to paste into Claude.</div>
@@ -818,6 +823,8 @@ const ACT = {
   saveFragment,
   threadFilter(b){ navigate("#/threads/"+b.dataset.v); },
   newThread(){ sheetNewThread(); },
+  newLifeThread(){ openSheet("New thread about my life",`<label class="fld">What's on your mind about your life right now?</label><input id="ntTitle" placeholder="e.g. Why do I always feel out of time and energy?"/><div class="btnrow" style="margin-top:16px"><button class="primary grow" data-act="createLifeThread">Create</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`); },
+  createLifeThread(){ const title=el("ntTitle").value.trim(); if(!title){toast("Title?");return;} const t={id:uid(),title,domain:"personal",projectId:null,status:"active",depthLevel:1,openedAt:now(),lastActivityAt:now(),outcome:null}; S.threads.push(t); save(); closeSheet(); openThread(t.id); },
   createThread(){
     const title=el("ntTitle").value.trim(); if(!title){toast("Title?");return;}
     const t={id:uid(),title,domain:el("ntDomain").value,projectId:el("ntProject").value||null,status:"active",depthLevel:1,openedAt:now(),lastActivityAt:now(),outcome:null};
