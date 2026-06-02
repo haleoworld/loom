@@ -19,9 +19,11 @@ const DATA_DIR = path.join(os.homedir(), ".loom");
 const DATA_FILE = path.join(DATA_DIR, "data.json");
 const TOKEN_FILE = path.join(DATA_DIR, "token");
 const AUDIO_DIR = path.join(DATA_DIR, "audio");
-const MODEL = process.env.LOOM_MODEL || path.join(DATA_DIR, "models", "ggml-small.bin");
-const FFMPEG = process.env.LOOM_FFMPEG || "/opt/homebrew/bin/ffmpeg";
-const WHISPER = process.env.LOOM_WHISPER || "/opt/homebrew/bin/whisper-cli";
+// Transcription via MLX Whisper (medium), sharing the model already cached for
+// the other project — no duplicate model. mlx_whisper decodes audio via ffmpeg.
+const PY = process.env.LOOM_PY || path.join(DATA_DIR, "venv", "bin", "python");
+const TRANSCRIBE_PY = path.join(DATA_DIR, "transcribe.py");
+const BIN_PATH = "/opt/homebrew/bin:" + (process.env.PATH || "");  // so mlx_whisper finds ffmpeg
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(AUDIO_DIR, { recursive: true });
@@ -109,14 +111,9 @@ const server = http.createServer((req, res) => {
     req.pipe(ws);
     ws.on("finish", () => {
       if (tooBig) { try { fs.unlinkSync(raw); } catch (_) {} return send(res, 413, "too large"); }
-      const wav = path.join(os.tmpdir(), "loom_" + id + ".wav");
-      execFile(FFMPEG, ["-y", "-i", raw, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav], err1 => {
-        if (err1) return send(res, 500, JSON.stringify({ error: "ffmpeg" }), TYPES[".json"]);
-        execFile(WHISPER, ["-m", MODEL, "-f", wav, "-nt", "-l", "auto"], { maxBuffer: 16 * 1024 * 1024 }, (err2, stdout) => {
-          try { fs.unlinkSync(wav); } catch (_) {}
-          if (err2) return send(res, 500, JSON.stringify({ error: "whisper" }), TYPES[".json"]);
-          send(res, 200, JSON.stringify({ text: (stdout || "").trim(), audioId: id + "." + ext, bytes: size }), TYPES[".json"]);
-        });
+      execFile(PY, [TRANSCRIBE_PY, raw], { maxBuffer: 16 * 1024 * 1024, env: Object.assign({}, process.env, { PATH: BIN_PATH }) }, (err, stdout, stderr) => {
+        if (err) { console.error("[loom] transcribe failed:", (stderr || err).toString().slice(0, 400)); return send(res, 500, JSON.stringify({ error: "transcribe" }), TYPES[".json"]); }
+        send(res, 200, JSON.stringify({ text: (stdout || "").trim(), audioId: id + "." + ext, bytes: size }), TYPES[".json"]);
       });
     });
     return;
