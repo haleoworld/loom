@@ -348,7 +348,7 @@ function render(){
   let html="";
   if(UI.tab==="capture") html=viewCapture();
   else if(UI.tab==="threads") html=viewThreads();
-  else if(UI.tab==="projects") html=viewProjects();
+  else if(UI.tab==="projects"||UI.tab==="project") html=viewProjects();
   else if(UI.tab==="global") html=viewGlobal();
   else if(UI.tab==="thread") html=viewThread();
   el("main").innerHTML = html;
