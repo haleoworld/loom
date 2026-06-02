@@ -506,6 +506,7 @@ function recentFragments(){
           ${t?`<span class="pill active" data-act="openThread" data-id="${t.id}">↳ ${esc(t.title)}</span>`
               :`<button class="sm ghost" data-act="assignFragment" data-id="${f.id}">+ thread</button>`}
           <span class="grow"></span>
+          <button class="sm ghost" data-act="copyFragment" data-id="${f.id}">⧉</button>
           <button class="sm ghost" data-act="editFragment" data-id="${f.id}">✎</button>
           <button class="sm ghost" data-act="deleteFragment" data-id="${f.id}">✕</button>
         </div>
@@ -537,6 +538,7 @@ function viewThreads(){
           <div class="grow"><div class="truncate" style="font-weight:500">${esc(t.title)}</div>
           <div class="sm muted truncate">${p?esc(p.name)+" · ":""}${domainLabel(t.domain)} · depth ${t.depthLevel}</div></div>
           ${stale?`<span class="pill" style="color:var(--warn)">${daysAgo(t.lastActivityAt)}d</span>`:`<span class="sm faint">${ago(t.lastActivityAt)}</span>`}
+          <button class="sm ghost" data-act="copyThread" data-id="${t.id}">⧉</button>
         </div>
         <div class="sm muted" style="margin-top:8px">${nf} fragment${nf===1?"":"s"} · ${nt} Q&amp;A</div>
       </div>`;
@@ -564,7 +566,7 @@ function viewThread(){
     </div>`;
   }
 
-  const fragHtml = frags.length ? frags.map(f=>`<div class="frag"><div class="body">${esc(f.body)}</div><div class="row sm faint" style="margin-top:5px;gap:8px"><span>${fmtDate(f.createdAt)}${f.type?" · "+f.type:""}${f.voiceId?" · 🎙":""}</span><span class="grow"></span><button class="sm ghost" data-act="editFragment" data-id="${f.id}">✎</button><button class="sm ghost" data-act="deleteFragment" data-id="${f.id}">✕</button></div></div>`).join("") : `<div class="muted sm">No fragments yet.</div>`;
+  const fragHtml = frags.length ? frags.map(f=>`<div class="frag"><div class="body">${esc(f.body)}</div><div class="row sm faint" style="margin-top:5px;gap:8px"><span>${fmtDate(f.createdAt)}${f.type?" · "+f.type:""}${f.voiceId?" · 🎙":""}</span><span class="grow"></span><button class="sm ghost" data-act="copyFragment" data-id="${f.id}">⧉</button><button class="sm ghost" data-act="editFragment" data-id="${f.id}">✎</button><button class="sm ghost" data-act="deleteFragment" data-id="${f.id}">✕</button></div></div>`).join("") : `<div class="muted sm">No fragments yet.</div>`;
   const turnHtml = turns.length ? turns.map(tn=>`<div class="turn"><div class="q">Q: ${esc(tn.question)}</div>${tn.answer?`<div class="a">${esc(tn.answer)}</div>`:`<button class="sm ghost" data-act="answerTurn" data-id="${tn.id}" style="margin-top:6px">+ answer</button>`}</div>`).join("") : `<div class="muted sm">No Q&amp;A yet. Use “Question prompt” → paste into Claude → record the question + your answer.</div>`;
 
   return `
@@ -633,8 +635,8 @@ function viewProject(){
 
 /* ---------- GLOBAL ---------- */
 function viewGlobal(){
-  const goals = S.global.goals.length ? S.global.goals.map((g,i)=>`<div class="card"><div class="row"><span class="grow" data-act="editGoal" data-i="${i}" style="cursor:pointer">${esc(g)}</span><button class="sm ghost" data-act="editGoal" data-i="${i}">✎</button><button class="sm ghost" data-act="delGoal" data-i="${i}">✕</button></div></div>`).join("") : `<div class="muted sm">No life goals yet — these are the fixed frame every project must serve.</div>`;
-  const models = S.global.models.length ? S.global.models.map((m,i)=>`<div class="card"><div class="row"><span class="grow" data-act="editModel" data-i="${i}" style="cursor:pointer">${esc(m)}</span><button class="sm ghost" data-act="editModel" data-i="${i}">✎</button><button class="sm ghost" data-act="delModel" data-i="${i}">✕</button></div></div>`).join("") : `<div class="muted sm">No thinking models yet — e.g. “invert”, “margin of safety”, “opportunity cost”.</div>`;
+  const goals = S.global.goals.length ? S.global.goals.map((g,i)=>`<div class="card"><div class="row"><span class="grow" data-act="editGoal" data-i="${i}" style="cursor:pointer">${esc(g)}</span><button class="sm ghost" data-act="copyGoal" data-i="${i}">⧉</button><button class="sm ghost" data-act="editGoal" data-i="${i}">✎</button><button class="sm ghost" data-act="delGoal" data-i="${i}">✕</button></div></div>`).join("") : `<div class="muted sm">No life goals yet — these are the fixed frame every project must serve.</div>`;
+  const models = S.global.models.length ? S.global.models.map((m,i)=>`<div class="card"><div class="row"><span class="grow" data-act="editModel" data-i="${i}" style="cursor:pointer">${esc(m)}</span><button class="sm ghost" data-act="copyModel" data-i="${i}">⧉</button><button class="sm ghost" data-act="editModel" data-i="${i}">✎</button><button class="sm ghost" data-act="delModel" data-i="${i}">✕</button></div></div>`).join("") : `<div class="muted sm">No thinking models yet — e.g. “invert”, “margin of safety”, “opportunity cost”.</div>`;
   return `
   <h2>Ultimate life goals</h2>${goals}
   <button class="ghost" data-act="addGoal" style="width:100%;margin-top:4px">+ Add life goal</button>
@@ -911,6 +913,10 @@ const ACT = {
   unpickSuggest(){ const s=el("capThread"); if(s) s.value=""; capInput(); },
   threadMd(b){ copy(threadMarkdown(thread(b.dataset.id))); },
   corpusMd(){ copy(corpusMarkdown()); },
+  copyFragment(b){ const f=S.fragments.find(x=>x.id===b.dataset.id); if(f) copy(f.body); },
+  copyThread(b){ const t=thread(b.dataset.id); if(t) copy(threadMarkdown(t)); },
+  copyGoal(b){ copy(S.global.goals[+b.dataset.i]||""); },
+  copyModel(b){ copy(S.global.models[+b.dataset.i]||""); },
   closeSheet(){ closeSheet(); },
   scrimClose(){ closeSheet(); },
 };
