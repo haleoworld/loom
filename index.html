@@ -111,6 +111,19 @@
   .mdbody th,.mdbody td{border:1px solid var(--line); padding:6px 9px; text-align:left; vertical-align:top;}
   .mdbody th{background:rgba(255,255,255,.04); font-weight:600;}
   .mdbody blockquote{border-left:3px solid var(--line); margin:8px 0; padding:2px 0 2px 12px; color:var(--muted);}
+  .todocards{display:flex; flex-direction:column; gap:10px; margin:10px 0;}
+  .todocard{border:1px solid var(--line); border-left-width:5px; border-radius:10px; padding:11px 13px; background:rgba(255,255,255,.02);}
+  .todocard .todohead{display:flex; align-items:flex-start; gap:8px; flex-wrap:wrap;}
+  .todocard .rank{flex:none; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; background:rgba(255,255,255,.18);}
+  .todocard .todotitle{flex:1; min-width:140px; font-weight:600; font-size:14px; line-height:1.4;}
+  .todocard .tagpill{flex:none; font-size:10.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; padding:3px 8px; border-radius:20px; white-space:nowrap;}
+  .todocard ul{margin:7px 0 0; padding-left:18px;}
+  .todocard li{margin:3px 0; font-size:13px; color:var(--muted);}
+  .todocard.do{border-left-color:#3fb950;} .todocard.do .tagpill{background:rgba(63,185,80,.18); color:#5fd877;} .todocard.do .rank{background:#2ea043;}
+  .todocard.delegate{border-left-color:#58a6ff;} .todocard.delegate .tagpill{background:rgba(88,166,255,.18); color:#79b8ff;} .todocard.delegate .rank{background:#388bfd;}
+  .todocard.push{border-left-color:#f0883e;} .todocard.push .tagpill{background:rgba(240,136,62,.18); color:#f0a96b;} .todocard.push .rank{background:#db6d28;}
+  .todocard.automate{border-left-color:#bc8cff;} .todocard.automate .tagpill{background:rgba(188,140,255,.18); color:#d2a8ff;} .todocard.automate .rank{background:#a371f7;}
+  .todocard.other{border-left-color:var(--line);} .todocard.other .tagpill{background:rgba(255,255,255,.1); color:var(--muted);}
 </style>
 <!--LOOM_CONFIG-->
 </head>
@@ -182,6 +195,7 @@ const el = id => document.getElementById(id);
 function esc(s){ return (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 // Minimal, safe markdown → HTML for displaying saved plans/reflections (escape first, then format).
 function mdInline(s){ return s.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>").replace(/(^|[^*])\*([^*\n]+)\*/g,"$1<em>$2</em>").replace(/`([^`]+)`/g,"<code>$1</code>"); }
+function tagClass(tag){ const t=(tag||"").toLowerCase(); if(/delegate/.test(t)) return "delegate"; if(/automat/.test(t)) return "automate"; if(/push|drop|kill|defer|later|park/.test(t)) return "push"; if(/\bdo\b|do it|^do/.test(t)) return "do"; return "other"; }
 function mdToHtml(src){
   const lines=String(src||"").replace(/\r\n/g,"\n").split("\n");
   let html="", i=0, list=null;
@@ -190,9 +204,22 @@ function mdToHtml(src){
   while(i<lines.length){
     const line=lines[i];
     if(/^\s*\|.*\|\s*$/.test(line) && i+1<lines.length && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(lines[i+1])){
-      closeList(); const head=line; i+=2;
-      html+='<table><thead><tr>'+cells(head).map(c=>"<th>"+mdInline(esc(c))+"</th>").join("")+'</tr></thead><tbody>';
-      while(i<lines.length && /^\s*\|.*\|\s*$/.test(lines[i])){ html+="<tr>"+cells(lines[i]).map(c=>"<td>"+mdInline(esc(c))+"</td>").join("")+"</tr>"; i++; }
+      closeList(); const head=cells(line); i+=2; const rows=[];
+      while(i<lines.length && /^\s*\|.*\|\s*$/.test(lines[i])){ rows.push(cells(lines[i])); i++; }
+      const lc=head.map(c=>c.toLowerCase());
+      const tagIdx=lc.findIndex(c=>/\btag\b|type|category/.test(c));
+      const taskIdx=lc.findIndex(c=>/task|todo|item|what/.test(c));
+      const rankIdx=lc.findIndex(c=>c==="#"||/^(rank|no\.?|priority|order|pri)$/.test(c.trim()));
+      if(tagIdx>=0 && taskIdx>=0){ // colour-coded TODO cards instead of a table
+        html+='<div class="todocards">'+rows.map(r=>{
+          const tag=r[tagIdx]||"", cls=tagClass(tag);
+          const others=r.map((c,j)=>(j!==tagIdx&&j!==taskIdx&&j!==rankIdx&&c)?c:null).filter(Boolean);
+          return `<div class="todocard ${cls}"><div class="todohead">${rankIdx>=0&&r[rankIdx]?`<span class="rank">${esc(r[rankIdx].replace(/[^\d]/g,'')||'')}</span>`:""}<span class="todotitle">${mdInline(esc(r[taskIdx]||""))}</span><span class="tagpill ${cls}">${mdInline(esc(tag))}</span></div>${others.length?`<ul>${others.map(o=>"<li>"+mdInline(esc(o))+"</li>").join("")}</ul>`:""}</div>`;
+        }).join("")+'</div>';
+        continue;
+      }
+      html+='<table><thead><tr>'+head.map(c=>"<th>"+mdInline(esc(c))+"</th>").join("")+'</tr></thead><tbody>';
+      html+=rows.map(r=>"<tr>"+r.map(c=>"<td>"+mdInline(esc(c))+"</td>").join("")+"</tr>").join("");
       html+="</tbody></table>"; continue;
     }
     if(/^\s*(---+|\*\*\*+|___+)\s*$/.test(line)){ closeList(); html+="<hr>"; i++; continue; }
