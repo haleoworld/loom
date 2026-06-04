@@ -96,7 +96,12 @@ ${kind === "weekly" ? `## GIVE ME — a WEEKLY plan I can run all week (phone-re
 1. TOP TODOs for the week ranked by priority×urgency, each tagged DO / DELEGATE (to whom) / PUSH-BACK or DROP / AUTOMATE.
 2. GOAL — this year / quarter / month (one line each).
 3. THIS WEEK's goal + the ONE must-do (high-priority & coherent) + 1-line why.
-4. DAY-BY-DAY — for each day Mon→Sun: the day's focus + ONE small must-do (a slice of the weekly must-do) + a 1-line why. Spread the load realistically given my limited time and 2 young kids; lighter on weekends.
+4. DAY-BY-DAY — for each day Mon→Sun, format it EXACTLY like this with each part on its OWN line (blank line between days):
+**Monday Jun X**
+🎯 Focus: …
+✅ Must-do: … (one small slice of the weekly must-do)
+💬 Why: … (one line)
+Spread the load realistically given my limited time and 2 young kids; lighter on weekends.
 5. ON-TRACK & COHERENCE — am I aligned or drifting? One sharp coaching line.` : `## GIVE ME — a short TODAY plan (phone-readable):
 1. TOP 3 todos for today ranked, each tagged DO / DELEGATE (to whom) / PUSH-BACK or DROP / AUTOMATE.
 2. TODAY's ONE must-do + 1-line why.

@@ -207,7 +207,7 @@ function mdToHtml(src){
     if(/^\s*$/.test(line)){ closeList(); i++; continue; }
     closeList(); const para=[line]; i++;
     while(i<lines.length && !/^\s*$/.test(lines[i]) && !/^#{1,6}\s/.test(lines[i]) && !/^\s*[-*]\s+/.test(lines[i]) && !/^\s*\d+\.\s+/.test(lines[i]) && !/^\s*>/.test(lines[i]) && !/^\s*\|.*\|\s*$/.test(lines[i]) && !/^\s*(---+|\*\*\*+|___+)\s*$/.test(lines[i])){ para.push(lines[i]); i++; }
-    html+="<p>"+mdInline(esc(para.join(" ")))+"</p>";
+    html+="<p>"+mdInline(esc(para.join(" "))).replace(/(\S) *(🎯|✅|💬|📌|⚡|🔑|⏰|🟢|🔴|⛔)/g,"$1<br>$2 ")+"</p>";
   }
   closeList(); return html;
 }
