@@ -96,6 +96,21 @@
   .warnbar{background:#332b1a; border:1px solid #5a4a2a; color:var(--warn); border-radius:10px; padding:9px 12px; font-size:12px; margin-bottom:12px;}
   a{color:var(--accent);}
   pre.export{white-space:pre-wrap; word-break:break-word; background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px; font-size:12px; max-height:40vh; overflow:auto;}
+  .mdbody{background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:14px 16px; font-size:14px; line-height:1.55; max-height:58vh; overflow:auto; word-break:break-word;}
+  .mdbody h1{font-size:18px; margin:2px 0 10px;}
+  .mdbody h2{font-size:16px; margin:16px 0 8px; color:var(--accent);}
+  .mdbody h3{font-size:14px; margin:14px 0 6px; color:var(--accent);}
+  .mdbody h4,.mdbody h5,.mdbody h6{font-size:13px; margin:12px 0 6px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);}
+  .mdbody p{margin:8px 0;}
+  .mdbody ul,.mdbody ol{margin:8px 0; padding-left:22px;}
+  .mdbody li{margin:4px 0;}
+  .mdbody strong{color:var(--text); font-weight:650;}
+  .mdbody hr{border:0; border-top:1px solid var(--line); margin:16px 0;}
+  .mdbody code{background:var(--line); border-radius:4px; padding:1px 5px; font-size:12px;}
+  .mdbody table{border-collapse:collapse; width:100%; margin:10px 0; font-size:12.5px; display:block; overflow-x:auto;}
+  .mdbody th,.mdbody td{border:1px solid var(--line); padding:6px 9px; text-align:left; vertical-align:top;}
+  .mdbody th{background:rgba(255,255,255,.04); font-weight:600;}
+  .mdbody blockquote{border-left:3px solid var(--line); margin:8px 0; padding:2px 0 2px 12px; color:var(--muted);}
 </style>
 <!--LOOM_CONFIG-->
 </head>
@@ -165,6 +180,37 @@ function now(){ return Date.now(); }
 /* ---------- helpers ---------- */
 const el = id => document.getElementById(id);
 function esc(s){ return (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+// Minimal, safe markdown → HTML for displaying saved plans/reflections (escape first, then format).
+function mdInline(s){ return s.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>").replace(/(^|[^*])\*([^*\n]+)\*/g,"$1<em>$2</em>").replace(/`([^`]+)`/g,"<code>$1</code>"); }
+function mdToHtml(src){
+  const lines=String(src||"").replace(/\r\n/g,"\n").split("\n");
+  let html="", i=0, list=null;
+  const closeList=()=>{ if(list){ html+="</"+list+">"; list=null; } };
+  const cells=r=>r.replace(/^\s*\|/,"").replace(/\|\s*$/,"").split("|").map(c=>c.trim());
+  while(i<lines.length){
+    const line=lines[i];
+    if(/^\s*\|.*\|\s*$/.test(line) && i+1<lines.length && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(lines[i+1])){
+      closeList(); const head=line; i+=2;
+      html+='<table><thead><tr>'+cells(head).map(c=>"<th>"+mdInline(esc(c))+"</th>").join("")+'</tr></thead><tbody>';
+      while(i<lines.length && /^\s*\|.*\|\s*$/.test(lines[i])){ html+="<tr>"+cells(lines[i]).map(c=>"<td>"+mdInline(esc(c))+"</td>").join("")+"</tr>"; i++; }
+      html+="</tbody></table>"; continue;
+    }
+    if(/^\s*(---+|\*\*\*+|___+)\s*$/.test(line)){ closeList(); html+="<hr>"; i++; continue; }
+    const h=line.match(/^(#{1,6})\s+(.*)$/);
+    if(h){ closeList(); const lv=h[1].length; html+="<h"+lv+">"+mdInline(esc(h[2]))+"</h"+lv+">"; i++; continue; }
+    const q=line.match(/^\s*>\s?(.*)$/);
+    if(q){ closeList(); html+="<blockquote>"+mdInline(esc(q[1]))+"</blockquote>"; i++; continue; }
+    const ul=line.match(/^\s*[-*]\s+(.*)$/);
+    if(ul){ if(list!=="ul"){ closeList(); html+="<ul>"; list="ul"; } html+="<li>"+mdInline(esc(ul[1]))+"</li>"; i++; continue; }
+    const ol=line.match(/^\s*\d+\.\s+(.*)$/);
+    if(ol){ if(list!=="ol"){ closeList(); html+="<ol>"; list="ol"; } html+="<li>"+mdInline(esc(ol[1]))+"</li>"; i++; continue; }
+    if(/^\s*$/.test(line)){ closeList(); i++; continue; }
+    closeList(); const para=[line]; i++;
+    while(i<lines.length && !/^\s*$/.test(lines[i]) && !/^#{1,6}\s/.test(lines[i]) && !/^\s*[-*]\s+/.test(lines[i]) && !/^\s*\d+\.\s+/.test(lines[i]) && !/^\s*>/.test(lines[i]) && !/^\s*\|.*\|\s*$/.test(lines[i]) && !/^\s*(---+|\*\*\*+|___+)\s*$/.test(lines[i])){ para.push(lines[i]); i++; }
+    html+="<p>"+mdInline(esc(para.join(" ")))+"</p>";
+  }
+  closeList(); return html;
+}
 function domainLabel(d){ const m=(S.domains||[]).find(x=>x[0]===d); return m?m[1]:(d||"—"); }
 function domainSlug(label){ let base=(label||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,24)||"domain"; let k=base,n=1; while((S.domains||[]).some(d=>d[0]===k)) k=base+"-"+(++n); return k; }
 function project(id){ return S.projects.find(p=>p.id===id); }
@@ -1022,7 +1068,7 @@ const ACT = {
   saveReflection(){ const b=el("reflBody").value.trim(); if(b){ S.reflections.push({id:uid(),createdAt:now(),body:b}); save(); toast("✎ reflection saved — it'll sharpen your coaching"); } closeSheet(); render(); },
   savePlan(){ openSheet("Save a plan from Claude",`<p class="muted sm">Paste the plan/coaching Claude gave you so it's kept here for reference.</p><textarea id="planBody" rows="12" placeholder="Paste Claude's plan…"></textarea><div class="btnrow" style="margin-top:14px"><button class="primary grow" data-act="confirmSavePlan">Save plan</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`); },
   confirmSavePlan(){ const b=el("planBody").value.trim(); if(b){ S.plans.push({id:uid(),createdAt:now(),body:b,source:"claude"}); save(); toast("📋 plan saved"); } closeSheet(); render(); },
-  viewEntry(b){ const list=b.dataset.kind==="plan"?S.plans:S.reflections; const it=list.find(x=>x.id===b.dataset.id); if(!it) return; openSheet(b.dataset.kind==="plan"?"Saved plan":"Reflection",`<div class="sm faint" style="margin-bottom:8px">${new Date(it.createdAt).toLocaleString()}</div><pre class="export">${esc(it.body)}</pre><div class="btnrow" style="margin-top:12px"><button class="primary grow" data-act="copyEntry" data-kind="${b.dataset.kind}" data-id="${it.id}">⧉ Copy</button><button class="sm danger" data-act="delEntry" data-kind="${b.dataset.kind}" data-id="${it.id}">Delete</button><button class="ghost" data-act="closeSheet">Close</button></div>`); },
+  viewEntry(b){ const list=b.dataset.kind==="plan"?S.plans:S.reflections; const it=list.find(x=>x.id===b.dataset.id); if(!it) return; openSheet(b.dataset.kind==="plan"?"Saved plan":"Reflection",`<div class="sm faint" style="margin-bottom:8px">${new Date(it.createdAt).toLocaleString()}</div><div class="mdbody">${mdToHtml(it.body)}</div><div class="btnrow" style="margin-top:12px"><button class="primary grow" data-act="copyEntry" data-kind="${b.dataset.kind}" data-id="${it.id}">⧉ Copy</button><button class="sm danger" data-act="delEntry" data-kind="${b.dataset.kind}" data-id="${it.id}">Delete</button><button class="ghost" data-act="closeSheet">Close</button></div>`); },
   copyEntry(b){ const list=b.dataset.kind==="plan"?S.plans:S.reflections; const it=list.find(x=>x.id===b.dataset.id); if(it) copy(it.body); },
   delEntry(b){ if(!confirm("Delete this entry?")) return; if(b.dataset.kind==="plan") S.plans=S.plans.filter(x=>x.id!==b.dataset.id); else S.reflections=S.reflections.filter(x=>x.id!==b.dataset.id); save(); closeSheet(); render(); },
   addTask(){ const i=el("taskInput"); const v=i?i.value.trim():""; if(!v) return; S.tasks.push({id:uid(),title:v,done:false,createdAt:now(),due:null,recurring:null,priority:null,note:""}); save(); render(); const j=el("taskInput"); if(j) j.focus(); },
