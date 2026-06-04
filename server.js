@@ -59,7 +59,7 @@ function tgSend(text, cb) {
 function rollDueServer(ts, period) { const d = new Date(ts); if (period === "weekly") d.setDate(d.getDate() + 7); else if (period === "monthly") d.setMonth(d.getMonth() + 1); else if (period === "yearly") d.setFullYear(d.getFullYear() + 1); return d.getTime(); }
 function domLabel(data, key) { const m = (data.domains || []).find(x => x[0] === key); return m ? m[1] : (key || "—"); }
 function openTasksOrdered(data) { const pr = { high: 0, med: 1, low: 2 }; return (data.tasks || []).filter(t => !t.done).sort((a, b) => { const ao = a.due || 8e15, bo = b.due || 8e15; if (ao !== bo) return ao - bo; return (pr[a.priority] ?? 1) - (pr[b.priority] ?? 1); }); }
-function buildPlanPrompt(data) {
+function buildPlanPrompt(data, kind) {
   const g = data.global || {};
   const goals = (g.goals || []).map((x, i) => `  ${i + 1}. ${x}`).join("\n") || "  (none)";
   const models = (g.models || []).map(x => `  - ${x}`).join("\n") || "  (none)";
@@ -92,17 +92,20 @@ ${lpTxt}
 
 ## CONTEXT: busy life, 2 young kids; limited time/energy is my #1 constraint. Roots: reclaim time/energy; communicate + delegate instead of doing everything; become the orchestrator not the doer. Bias me toward delegating or dropping.
 
-## GIVE ME (concise, phone-readable):
-1. TOP 3–5 TODOs ranked by priority×urgency, each tagged DO / DELEGATE (to whom) / PUSH-BACK or DROP / AUTOMATE.
+${kind === "weekly" ? `## GIVE ME — a WEEKLY plan I can run all week (phone-readable):
+1. TOP TODOs for the week ranked by priority×urgency, each tagged DO / DELEGATE (to whom) / PUSH-BACK or DROP / AUTOMATE.
 2. GOAL — this year / quarter / month (one line each).
-3. THIS WEEK + the ONE must-do (high-priority & coherent) + 1-line why.
-4. TODAY + ONE must-do (a small slice of the weekly one) + 1-line why.
-5. ON-TRACK & COHERENCE — am I aligned or drifting? One sharp coaching line.
+3. THIS WEEK's goal + the ONE must-do (high-priority & coherent) + 1-line why.
+4. DAY-BY-DAY — for each day Mon→Sun: the day's focus + ONE small must-do (a slice of the weekly must-do) + a 1-line why. Spread the load realistically given my limited time and 2 young kids; lighter on weekends.
+5. ON-TRACK & COHERENCE — am I aligned or drifting? One sharp coaching line.` : `## GIVE ME — a short TODAY plan (phone-readable):
+1. TOP 3 todos for today ranked, each tagged DO / DELEGATE (to whom) / PUSH-BACK or DROP / AUTOMATE.
+2. TODAY's ONE must-do + 1-line why.
+3. ON-TRACK & COHERENCE — one sharp coaching line.`}
 Reply in the language my entries are written in.`;
 }
 function runCoach(kind, cb) {
   let data; try { data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch (e) { return cb && cb(e); }
-  const prompt = buildPlanPrompt(data) + (kind === "weekly" ? "\n\n(WEEKLY review — be reflective; check my week against last week's plan.)" : "\n\n(DAILY check-in — keep it short and focused on TODAY.)");
+  const prompt = buildPlanPrompt(data, kind) + (kind === "weekly" ? "\n\n(WEEKLY plan — be reflective; check this week against last week's plan, then lay out the full week day-by-day.)" : "\n\n(quick check-in — keep it short and focused on TODAY.)");
   callAnthropic(prompt, 2000, (err, text) => {
     if (err) return cb && cb(err);
     try { data.plans = data.plans || []; data.plans.push({ id: "p_" + crypto.randomBytes(4).toString("hex"), createdAt: Date.now(), body: text, source: kind }); data.meta = data.meta || {}; data.meta.updatedAt = Date.now(); fs.writeFileSync(DATA_FILE, JSON.stringify(data)); } catch (e) {}
@@ -326,7 +329,7 @@ function saveCoachState(s) { try { fs.writeFileSync(COACH_STATE, JSON.stringify(
 setInterval(() => {
   if (!tgToken() || !tgChat() || !anthKey()) return;
   const now = new Date(), h = now.getHours(), m = now.getMinutes(), today = now.toISOString().slice(0, 10), st = coachState();
-  if (h === 8 && m < 5 && st.lastDaily !== today) { st.lastDaily = today; saveCoachState(st); runCoach("daily", () => {}); }
+  // Automatic: WEEKLY only — a full week plan with a day-by-day breakdown, Sunday 19:00.
   if (now.getDay() === 0 && h === 19 && m < 5 && st.lastWeekly !== today) { st.lastWeekly = today; saveCoachState(st); runCoach("weekly", () => {}); }
 }, 60000);
 
