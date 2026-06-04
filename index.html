@@ -142,7 +142,7 @@ function load(){
     const raw = localStorage.getItem(KEY);
     if(raw) return migrate(JSON.parse(raw));
   }catch(e){ console.warn("load failed",e); }
-  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], tasks:[], domains:DEFAULT_DOMAINS.map(d=>[d[0],d[1]]), fragTypes:DEFAULT_FRAG_TYPES.slice(), meta:{lastBackup:0,updatedAt:0} };
+  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], tasks:[], reflections:[], plans:[], domains:DEFAULT_DOMAINS.map(d=>[d[0],d[1]]), fragTypes:DEFAULT_FRAG_TYPES.slice(), meta:{lastBackup:0,updatedAt:0} };
 }
 function migrate(s){
   s.global = s.global || {models:[],goals:[]};
@@ -151,6 +151,8 @@ function migrate(s){
   if(!Array.isArray(s.domains) || !s.domains.length) s.domains = DEFAULT_DOMAINS.map(d=>[d[0],d[1]]);
   if(!Array.isArray(s.fragTypes) || !s.fragTypes.length) s.fragTypes = DEFAULT_FRAG_TYPES.slice();
   s.tasks = s.tasks || [];
+  s.reflections = s.reflections || [];
+  s.plans = s.plans || [];
   s.meta = s.meta||{lastBackup:0,updatedAt:0};
   if(s.meta.updatedAt==null) s.meta.updatedAt=0;
   return s;
@@ -732,16 +734,25 @@ function viewTasks(){
     <div class="row" style="gap:8px"><input id="taskInput" class="grow" placeholder="Something to just get done…"/><button class="primary" data-act="addTask">Add</button></div>
     <p class="faint sm" style="margin:8px 2px 0">For ad-hoc must-dos — chores &amp; admin, not lines of thinking. Tap ✎ to set a due date, repeat, or priority.</p>
   </div>
-  <div class="btnrow"><button class="primary grow" data-act="generatePlan">◆ Generate my plan &amp; coaching → Claude</button></div>
+  <div class="btnrow"><button class="primary grow" data-act="generatePlan">◆ Generate plan &amp; coaching</button><button class="grow" data-act="reflect">✎ Reflect</button><button class="ghost" data-act="savePlan">＋ Save plan</button></div>
+  <p class="faint sm" style="margin:2px">Generate copies a coaching prompt for Claude. Paste Claude's reply back with “Save plan” so it's kept here. Reflect feeds your own weekly review into the coaching.</p>
   <h2>To do${open.length?` (${open.length})`:""}</h2>
   ${open.length? open.map(row).join("") : `<div class="muted sm">No open tasks. 🎉</div>`}
   ${done.length?`<details style="margin-top:10px"><summary class="muted sm" style="cursor:pointer">Done (${done.length})</summary><div style="margin-top:8px">${done.map(row).join("")}</div></details>`:""}
+  ${historyBlock()}
   `;
+}
+function historyBlock(){
+  const items=[...S.plans.map(p=>({...p,kind:"plan"})), ...S.reflections.map(r=>({...r,kind:"reflection"}))].sort((a,b)=>b.createdAt-a.createdAt);
+  if(!items.length) return "";
+  return `<h2>Plans &amp; reflections</h2>` + items.map(it=>`<div class="card tap" data-act="viewEntry" data-kind="${it.kind}" data-id="${it.id}"><div class="row"><span class="pill ${it.kind==='plan'?'active':''}">${it.kind==='plan'?'📋 plan':'✎ reflection'}</span><span class="grow truncate sm muted">${esc((it.body||"").replace(/\s+/g," ").slice(0,60))}</span><span class="sm faint">${ago(it.createdAt)}</span></div></div>`).join("");
 }
 /* ---------- PLAN & COACHING prompt (used in-app now; Phase B will call this via API) ---------- */
 function tasksBlock(){ const o=S.tasks.filter(t=>!t.done); return o.length? o.map(t=>`  - ${t.title}${t.due?` [due ${fmtDate(t.due)}]`:""}${t.recurring?` [repeats ${t.recurring}]`:""}${t.priority?` [${t.priority}]`:""}`).join("\n") : "  (no tasks logged)"; }
 function openActionsBlock(){ const a=S.threads.filter(t=>t.outcome && (t.outcome.type==="decision"||t.outcome.type==="action")); return a.length? a.map(t=>`  - [${t.outcome.type}] ${t.title}: ${t.outcome.content}${t.outcome.deadline?` (by ${fmtDate(t.outcome.deadline)})`:""}`).join("\n") : "  (none)"; }
 function activeThreadsBlockP(){ const a=activeThreads().slice().sort((x,y)=>y.lastActivityAt-x.lastActivityAt).slice(0,25); return a.length? a.map(t=>{const p=project(t.projectId);return `  - "${t.title}" [${p?p.name:"life"} / ${domainLabel(t.domain)}, depth ${t.depthLevel}]`;}).join("\n") : "  (none)"; }
+function latestReflectionBlock(){ const r=S.reflections.slice().sort((a,b)=>b.createdAt-a.createdAt)[0]; return r ? r.body : "  (no reflection logged yet)"; }
+function lastPlanBlock(){ const p=S.plans.slice().sort((a,b)=>b.createdAt-a.createdAt)[0]; return p ? (p.body.length>1500?p.body.slice(0,1500)+"…(truncated)":p.body) : "  (no previous plan saved)"; }
 function planPrompt(){
   return `You are my executive coach and thinking partner. Read my whole picture, then build me a prioritized plan. Be specific, reference my actual goals/projects/threads/tasks, and be honest like a coach — not a cheerleader.
 
@@ -758,6 +769,12 @@ ${openActionsBlock()}
 
 ## MY AD-HOC TASKS (chores/admin — must-do, not strategic)
 ${tasksBlock()}
+
+## MY LATEST REFLECTION (my own words — weigh this heavily)
+${latestReflectionBlock()}
+
+## MY PREVIOUS PLAN (for continuity — check my progress against what I committed)
+${lastPlanBlock()}
 
 ## CONTEXT ABOUT ME
 - Busy life, 2 young kids, limited time/energy — my #1 constraint.
@@ -994,6 +1011,13 @@ const ACT = {
   questionPrompt(b){ const t=thread(b.dataset.id); copy(questionPrompt(t)); },
   coherence(){ copy(coherencePrompt()); },
   generatePlan(){ copy(planPrompt()); },
+  reflect(){ const scaffold="What worked this week?\n\nWhat did I avoid / procrastinate on?\n\nWhat would a critic say about my week?\n\nDid I act in line with my goals — where did I drift?\n\nEnergy / mood:\n\nOne win:"; openSheet("Weekly reflection (your words first)",`<p class="muted sm">Write your own honest review BEFORE the AI weighs in — the gap between the two is where you're rationalizing.</p><textarea id="reflBody" rows="12">${esc(scaffold)}</textarea><div class="btnrow" style="margin-top:14px"><button class="primary grow" data-act="saveReflection">Save reflection</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`); },
+  saveReflection(){ const b=el("reflBody").value.trim(); if(b){ S.reflections.push({id:uid(),createdAt:now(),body:b}); save(); toast("✎ reflection saved — it'll sharpen your coaching"); } closeSheet(); render(); },
+  savePlan(){ openSheet("Save a plan from Claude",`<p class="muted sm">Paste the plan/coaching Claude gave you so it's kept here for reference.</p><textarea id="planBody" rows="12" placeholder="Paste Claude's plan…"></textarea><div class="btnrow" style="margin-top:14px"><button class="primary grow" data-act="confirmSavePlan">Save plan</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`); },
+  confirmSavePlan(){ const b=el("planBody").value.trim(); if(b){ S.plans.push({id:uid(),createdAt:now(),body:b,source:"claude"}); save(); toast("📋 plan saved"); } closeSheet(); render(); },
+  viewEntry(b){ const list=b.dataset.kind==="plan"?S.plans:S.reflections; const it=list.find(x=>x.id===b.dataset.id); if(!it) return; openSheet(b.dataset.kind==="plan"?"Saved plan":"Reflection",`<div class="sm faint" style="margin-bottom:8px">${new Date(it.createdAt).toLocaleString()}</div><pre class="export">${esc(it.body)}</pre><div class="btnrow" style="margin-top:12px"><button class="primary grow" data-act="copyEntry" data-kind="${b.dataset.kind}" data-id="${it.id}">⧉ Copy</button><button class="sm danger" data-act="delEntry" data-kind="${b.dataset.kind}" data-id="${it.id}">Delete</button><button class="ghost" data-act="closeSheet">Close</button></div>`); },
+  copyEntry(b){ const list=b.dataset.kind==="plan"?S.plans:S.reflections; const it=list.find(x=>x.id===b.dataset.id); if(it) copy(it.body); },
+  delEntry(b){ if(!confirm("Delete this entry?")) return; if(b.dataset.kind==="plan") S.plans=S.plans.filter(x=>x.id!==b.dataset.id); else S.reflections=S.reflections.filter(x=>x.id!==b.dataset.id); save(); closeSheet(); render(); },
   addTask(){ const i=el("taskInput"); const v=i?i.value.trim():""; if(!v) return; S.tasks.push({id:uid(),title:v,done:false,createdAt:now(),due:null,recurring:null,priority:null,note:""}); save(); render(); const j=el("taskInput"); if(j) j.focus(); },
   toggleTask(b){ const t=S.tasks.find(x=>x.id===b.dataset.id); if(!t) return; if(!t.done && t.recurring && t.due){ t.due=rollDue(t.due,t.recurring); toast("↻ rolled to next "+t.recurring); } else { t.done=!t.done; t.doneAt=t.done?now():null; } save(); render(); },
   editTask(b){ const t=S.tasks.find(x=>x.id===b.dataset.id); if(!t) return; const dueVal=t.due?new Date(t.due).toISOString().slice(0,10):""; openSheet("Edit task",`
