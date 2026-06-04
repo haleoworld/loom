@@ -39,6 +39,78 @@ function callAnthropic(prompt, maxTokens, cb) {
       catch (e) { cb(e); } }); });
   r.on("error", cb); r.write(payload); r.end();
 }
+// ---- Telegram + coaching ----
+function tgToken() { try { return fs.readFileSync(path.join(DATA_DIR, "telegram_token"), "utf8").trim(); } catch (e) { return ""; } }
+function tgChat() { try { return fs.readFileSync(path.join(DATA_DIR, "telegram_chat"), "utf8").trim(); } catch (e) { return ""; } }
+function tgApi(method, params, cb) {
+  const tok = tgToken(); if (!tok) return cb && cb(new Error("no telegram token"));
+  const payload = JSON.stringify(params || {});
+  const r = https.request({ hostname: "api.telegram.org", path: `/bot${tok}/${method}`, method: "POST", headers: { "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
+    resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => { try { cb && cb(null, JSON.parse(d)); } catch (e) { cb && cb(e); } }); });
+  r.on("error", e => cb && cb(e)); r.write(payload); r.end();
+}
+function tgSend(text, cb) {
+  const chat = tgChat(); if (!chat) return cb && cb(new Error("no chat id"));
+  const chunks = []; let s = String(text);
+  while (s.length > 4000) { let cut = s.lastIndexOf("\n", 4000); if (cut < 2000) cut = 4000; chunks.push(s.slice(0, cut)); s = s.slice(cut); }
+  chunks.push(s);
+  let i = 0; (function next() { if (i >= chunks.length) return cb && cb(null); tgApi("sendMessage", { chat_id: chat, text: chunks[i++] }, e => { if (e) return cb && cb(e); next(); }); })();
+}
+function rollDueServer(ts, period) { const d = new Date(ts); if (period === "weekly") d.setDate(d.getDate() + 7); else if (period === "monthly") d.setMonth(d.getMonth() + 1); else if (period === "yearly") d.setFullYear(d.getFullYear() + 1); return d.getTime(); }
+function domLabel(data, key) { const m = (data.domains || []).find(x => x[0] === key); return m ? m[1] : (key || "—"); }
+function openTasksOrdered(data) { const pr = { high: 0, med: 1, low: 2 }; return (data.tasks || []).filter(t => !t.done).sort((a, b) => { const ao = a.due || 8e15, bo = b.due || 8e15; if (ao !== bo) return ao - bo; return (pr[a.priority] ?? 1) - (pr[b.priority] ?? 1); }); }
+function buildPlanPrompt(data) {
+  const g = data.global || {};
+  const goals = (g.goals || []).map((x, i) => `  ${i + 1}. ${x}`).join("\n") || "  (none)";
+  const models = (g.models || []).map(x => `  - ${x}`).join("\n") || "  (none)";
+  const projects = (data.projects || []).map(p => `  - ${p.name} [${domLabel(data, p.domain)}] — goal: ${p.goal || "?"}; role: ${p.role || "?"}`).join("\n") || "  (none)";
+  const active = (data.threads || []).filter(t => t.status === "active").sort((a, b) => b.lastActivityAt - a.lastActivityAt).slice(0, 25).map(t => { const p = (data.projects || []).find(x => x.id === t.projectId); return `  - "${t.title}" [${p ? p.name : "life"} / ${domLabel(data, t.domain)}, depth ${t.depthLevel}]`; }).join("\n") || "  (none)";
+  const acts = (data.threads || []).filter(t => t.outcome && (t.outcome.type === "decision" || t.outcome.type === "action")).map(t => `  - [${t.outcome.type}] ${t.title}: ${t.outcome.content}`).join("\n") || "  (none)";
+  const tasks = openTasksOrdered(data).map(t => `  - ${t.title}${t.due ? ` [due ${new Date(t.due).toISOString().slice(0, 10)}]` : ""}${t.recurring ? ` [repeats ${t.recurring}]` : ""}${t.priority ? ` [${t.priority}]` : ""}`).join("\n") || "  (none)";
+  const refl = (data.reflections || []).slice().sort((a, b) => b.createdAt - a.createdAt)[0]; const reflTxt = refl ? refl.body : "(none yet)";
+  const lp = (data.plans || []).slice().sort((a, b) => b.createdAt - a.createdAt)[0]; const lpTxt = lp ? (lp.body.length > 1200 ? lp.body.slice(0, 1200) + "…" : lp.body) : "(none)";
+  return `You are my executive coach & thinking partner. Build me a prioritized plan from my whole picture. Be specific, reference my actual goals/projects/tasks, be honest like a coach not a cheerleader, and keep it tight enough to read on a phone.
+
+## MY GLOBAL FRAME
+Life goals:
+${goals}
+Thinking models:
+${models}
+
+## PROJECTS
+${projects}
+## ACTIVE THREADS
+${active}
+## COMMITTED DECISIONS/ACTIONS
+${acts}
+## AD-HOC TASKS
+${tasks}
+## MY LATEST REFLECTION (weigh heavily)
+${reflTxt}
+## MY PREVIOUS PLAN (check progress vs this)
+${lpTxt}
+
+## CONTEXT: busy life, 2 young kids; limited time/energy is my #1 constraint. Roots: reclaim time/energy; communicate + delegate instead of doing everything; become the orchestrator not the doer. Bias me toward delegating or dropping.
+
+## GIVE ME (concise, phone-readable):
+1. TOP 3–5 TODOs ranked by priority×urgency, each tagged DO / DELEGATE (to whom) / PUSH-BACK or DROP / AUTOMATE.
+2. GOAL — this year / quarter / month (one line each).
+3. THIS WEEK + the ONE must-do (high-priority & coherent) + 1-line why.
+4. TODAY + ONE must-do (a small slice of the weekly one) + 1-line why.
+5. ON-TRACK & COHERENCE — am I aligned or drifting? One sharp coaching line.
+Reply in the language my entries are written in.`;
+}
+function runCoach(kind, cb) {
+  let data; try { data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch (e) { return cb && cb(e); }
+  const prompt = buildPlanPrompt(data) + (kind === "weekly" ? "\n\n(WEEKLY review — be reflective; check my week against last week's plan.)" : "\n\n(DAILY check-in — keep it short and focused on TODAY.)");
+  callAnthropic(prompt, 2000, (err, text) => {
+    if (err) return cb && cb(err);
+    try { data.plans = data.plans || []; data.plans.push({ id: "p_" + crypto.randomBytes(4).toString("hex"), createdAt: Date.now(), body: text, source: kind }); data.meta = data.meta || {}; data.meta.updatedAt = Date.now(); fs.writeFileSync(DATA_FILE, JSON.stringify(data)); } catch (e) {}
+    const tlist = openTasksOrdered(data).map((t, i) => `${i + 1}. ${t.title}`).join("\n");
+    const header = (kind === "weekly" ? "📅 Weekly review" : "☀️ Daily plan") + " — " + new Date().toLocaleDateString();
+    tgSend(`${header}\n\n${text}${tlist ? `\n\n— Tasks (reply "done N" to check off) —\n${tlist}` : ""}`, cb);
+  });
+}
 const BIN_PATH = "/opt/homebrew/bin:" + (process.env.PATH || "");  // so mlx_whisper finds ffmpeg
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -149,6 +221,14 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ---- on-demand coach run (also used by the scheduler) ----
+  if (urlPath === "/coach/run" && req.method === "POST") {
+    if (!authed(req)) return send(res, 401, "unauthorized");
+    const kind = /[?&]kind=weekly/.test(req.url || "") ? "weekly" : "daily";
+    runCoach(kind, err => { if (err) { console.error("[loom] coach failed:", err.message); return send(res, 502, JSON.stringify({ error: err.message }), TYPES[".json"]); } send(res, 200, JSON.stringify({ ok: true, kind }), TYPES[".json"]); });
+    return;
+  }
+
   // ---- summarize note text with a small local LLM ----
   if (urlPath === "/summarize" && req.method === "POST") {
     if (!authed(req)) return send(res, 401, "unauthorized");
@@ -238,3 +318,39 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`[loom] sync server on http://127.0.0.1:${PORT}  data=${DATA_FILE}`);
 });
+
+// ---- in-process scheduler (server is always-on via launchd) ----
+const COACH_STATE = path.join(DATA_DIR, "coach_state.json");
+function coachState() { try { return JSON.parse(fs.readFileSync(COACH_STATE, "utf8")); } catch (e) { return {}; } }
+function saveCoachState(s) { try { fs.writeFileSync(COACH_STATE, JSON.stringify(s)); } catch (e) {} }
+setInterval(() => {
+  if (!tgToken() || !tgChat() || !anthKey()) return;
+  const now = new Date(), h = now.getHours(), m = now.getMinutes(), today = now.toISOString().slice(0, 10), st = coachState();
+  if (h === 8 && m < 5 && st.lastDaily !== today) { st.lastDaily = today; saveCoachState(st); runCoach("daily", () => {}); }
+  if (now.getDay() === 0 && h === 19 && m < 5 && st.lastWeekly !== today) { st.lastWeekly = today; saveCoachState(st); runCoach("weekly", () => {}); }
+}, 60000);
+
+// ---- Telegram command polling (one consumer of getUpdates) ----
+let tgOffset = 0;
+setInterval(() => {
+  if (!tgToken()) return;
+  tgApi("getUpdates", { offset: tgOffset, timeout: 0 }, (err, res) => {
+    if (err || !res || !res.ok) return;
+    for (const u of res.result) {
+      tgOffset = u.update_id + 1;
+      const raw = u.message && u.message.text; if (!raw) continue;
+      const t = raw.trim().toLowerCase();
+      if (t === "tasks") { let data; try { data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch (e) { continue; } const list = openTasksOrdered(data).map((x, i) => `${i + 1}. ${x.title}`).join("\n") || "(no open tasks)"; tgSend("Your tasks:\n" + list); }
+      else if (t === "plan") { tgSend("◆ generating your plan…"); runCoach("daily", () => {}); }
+      else if (t === "weekly") { tgSend("📅 generating weekly review…"); runCoach("weekly", () => {}); }
+      else if (t === "help" || t === "/start") { tgSend('Loom coach commands:\n"plan" — generate today\'s plan\n"weekly" — weekly review\n"tasks" — list open tasks\n"done N" — check off task N'); }
+      else if (/^done\s+\d+$/.test(t)) {
+        const n = parseInt(t.split(/\s+/)[1], 10);
+        let data; try { data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch (e) { continue; }
+        const task = openTasksOrdered(data)[n - 1];
+        if (!task) { tgSend(`No task ${n}.`); }
+        else { if (task.recurring && task.due) { task.due = rollDueServer(task.due, task.recurring); tgSend(`↻ "${task.title}" rolled to next ${task.recurring}.`); } else { task.done = true; task.doneAt = Date.now(); tgSend(`✅ Done: "${task.title}"`); } data.meta = data.meta || {}; data.meta.updatedAt = Date.now(); try { fs.writeFileSync(DATA_FILE, JSON.stringify(data)); } catch (e) {} }
+      }
+    }
+  });
+}, 8000);
