@@ -6,6 +6,7 @@
    Auth: Bearer token (auto-generated). Reachable only via Tailscale (tailnet-only). */
 
 const http = require("http");
+const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -24,6 +25,20 @@ const AUDIO_DIR = path.join(DATA_DIR, "audio");
 const PY = process.env.LOOM_PY || path.join(DATA_DIR, "venv", "bin", "python");
 const TRANSCRIBE_PY = path.join(DATA_DIR, "transcribe.py");
 const SUMMARIZE_PY = path.join(DATA_DIR, "summarize.py");
+const ANTH_KEY_FILE = path.join(DATA_DIR, "anthropic_key");
+const PLAN_MODEL = process.env.LOOM_PLAN_MODEL || "claude-sonnet-4-6";
+function anthKey() { try { return fs.readFileSync(ANTH_KEY_FILE, "utf8").trim(); } catch (e) { return ""; } }
+function callAnthropic(prompt, maxTokens, cb) {
+  const key = anthKey();
+  if (!key) return cb(new Error("no API key on the Mini"));
+  const payload = JSON.stringify({ model: PLAN_MODEL, max_tokens: maxTokens || 2000, messages: [{ role: "user", content: prompt }] });
+  const r = https.request({ hostname: "api.anthropic.com", path: "/v1/messages", method: "POST",
+    headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
+    resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => {
+      try { const j = JSON.parse(d); if (j.error) return cb(new Error(j.error.message || "API error")); cb(null, (j.content || []).map(b => b.text || "").join("").trim()); }
+      catch (e) { cb(e); } }); });
+  r.on("error", cb); r.write(payload); r.end();
+}
 const BIN_PATH = "/opt/homebrew/bin:" + (process.env.PATH || "");  // so mlx_whisper finds ffmpeg
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -117,6 +132,23 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  // ---- AI plan & coaching via Claude API ----
+  if (urlPath === "/plan" && req.method === "POST") {
+    if (!authed(req)) return send(res, 401, "unauthorized");
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 400 * 1024) req.destroy(); });
+    req.on("end", () => {
+      let prompt = "";
+      try { prompt = JSON.parse(body || "{}").prompt || ""; } catch (e) {}
+      if (!prompt) return send(res, 400, JSON.stringify({ error: "no prompt" }), TYPES[".json"]);
+      callAnthropic(prompt, 2500, (err, text) => {
+        if (err) { console.error("[loom] plan failed:", err.message); return send(res, 502, JSON.stringify({ error: err.message }), TYPES[".json"]); }
+        send(res, 200, JSON.stringify({ plan: text }), TYPES[".json"]);
+      });
+    });
+    return;
+  }
+
   // ---- summarize note text with a small local LLM ----
   if (urlPath === "/summarize" && req.method === "POST") {
     if (!authed(req)) return send(res, 401, "unauthorized");
@@ -193,7 +225,7 @@ const server = http.createServer((req, res) => {
     const ext = path.extname(full).toLowerCase();
     if (ext === ".html") {
       // inject sync config so the app on the tailnet just works, no token typing
-      const cfg = `<script>window.LOOM_SYNC=${JSON.stringify({ token: TOKEN, url: BASE + "/data", sw: BASE + "/sw.js", scope: BASE + "/", transcribe: BASE + "/transcribe", audio: BASE + "/audio", summarize: BASE + "/summarize" })};</script>`;
+      const cfg = `<script>window.LOOM_SYNC=${JSON.stringify({ token: TOKEN, url: BASE + "/data", sw: BASE + "/sw.js", scope: BASE + "/", transcribe: BASE + "/transcribe", audio: BASE + "/audio", summarize: BASE + "/summarize", plan: anthKey() ? BASE + "/plan" : null })};</script>`;
       const html = buf.toString("utf8").replace("<!--LOOM_CONFIG-->", cfg);
       res.setHeader("Cache-Control", "no-cache");
       return send(res, 200, html, TYPES[".html"]);

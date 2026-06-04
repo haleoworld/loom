@@ -735,7 +735,7 @@ function viewTasks(){
     <p class="faint sm" style="margin:8px 2px 0">For ad-hoc must-dos — chores &amp; admin, not lines of thinking. Tap ✎ to set a due date, repeat, or priority.</p>
   </div>
   <div class="btnrow"><button class="primary grow" data-act="generatePlan">◆ Generate plan &amp; coaching</button><button class="grow" data-act="reflect">✎ Reflect</button><button class="ghost" data-act="savePlan">＋ Save plan</button></div>
-  <p class="faint sm" style="margin:2px">Generate copies a coaching prompt for Claude. Paste Claude's reply back with “Save plan” so it's kept here. Reflect feeds your own weekly review into the coaching.</p>
+  <p class="faint sm" style="margin:2px">${(SYNC&&SYNC.plan)?"Generate runs your AI coach and saves the plan in the history below. Reflect feeds your weekly review into it.":"Generate copies a coaching prompt for Claude — paste the reply back via “Save plan”. Reflect feeds your weekly review into the coaching."}</p>
   <h2>To do${open.length?` (${open.length})`:""}</h2>
   ${open.length? open.map(row).join("") : `<div class="muted sm">No open tasks. 🎉</div>`}
   ${done.length?`<details style="margin-top:10px"><summary class="muted sm" style="cursor:pointer">Done (${done.length})</summary><div style="margin-top:8px">${done.map(row).join("")}</div></details>`:""}
@@ -1010,7 +1010,14 @@ const ACT = {
   setDepth(b){ const t=thread(b.dataset.id); if(t){t.depthLevel=+b.value; touch(t); save();} },
   questionPrompt(b){ const t=thread(b.dataset.id); copy(questionPrompt(t)); },
   coherence(){ copy(coherencePrompt()); },
-  generatePlan(){ copy(planPrompt()); },
+  generatePlan(){
+    if(SYNC && SYNC.plan){
+      toast("◆ your coach is thinking… (~15s)");
+      fetch(SYNC.plan,{method:"POST",headers:{Authorization:"Bearer "+SYNC.token,"Content-Type":"application/json"},body:JSON.stringify({prompt:planPrompt()})})
+        .then(r=>r.json()).then(j=>{ if(j.plan){ const p={id:uid(),createdAt:now(),body:j.plan,source:"api"}; S.plans.push(p); save(); render(); ACT.viewEntry({dataset:{kind:"plan",id:p.id}}); } else { toast("Coaching failed: "+(j.error||"unknown")); } })
+        .catch(()=>toast("Couldn't reach the coach — is the Mini up?"));
+    } else { copy(planPrompt()); }
+  },
   reflect(){ const scaffold="What worked this week?\n\nWhat did I avoid / procrastinate on?\n\nWhat would a critic say about my week?\n\nDid I act in line with my goals — where did I drift?\n\nEnergy / mood:\n\nOne win:"; openSheet("Weekly reflection (your words first)",`<p class="muted sm">Write your own honest review BEFORE the AI weighs in — the gap between the two is where you're rationalizing.</p><textarea id="reflBody" rows="12">${esc(scaffold)}</textarea><div class="btnrow" style="margin-top:14px"><button class="primary grow" data-act="saveReflection">Save reflection</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`); },
   saveReflection(){ const b=el("reflBody").value.trim(); if(b){ S.reflections.push({id:uid(),createdAt:now(),body:b}); save(); toast("✎ reflection saved — it'll sharpen your coaching"); } closeSheet(); render(); },
   savePlan(){ openSheet("Save a plan from Claude",`<p class="muted sm">Paste the plan/coaching Claude gave you so it's kept here for reference.</p><textarea id="planBody" rows="12" placeholder="Paste Claude's plan…"></textarea><div class="btnrow" style="margin-top:14px"><button class="primary grow" data-act="confirmSavePlan">Save plan</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`); },
