@@ -22,7 +22,7 @@ To let you **think in fragments, have AI carry the thread, and stay coherent acr
 
 ## Data & sync
 - Self-hosted on the always-on **Mac Mini**, served over **Tailscale** (tailnet-only) at
-  `https://jerrys-mac-mini.tailac0a52.ts.net/loom`.
+  `https://<your-mac>.<your-tailnet>.ts.net/loom`.
 - `server.js` stores everything in **`~/.loom/data.json` on the Mini** — nothing touches any third party.
 - **Sync is automatic and cross-device:** each device pulls on open/focus and pushes (debounced) on every change.
   Whole-document last-write-wins by `meta.updatedAt`, with a server-side stale-write guard (409 → re-pull).
@@ -35,7 +35,7 @@ To let you **think in fragments, have AI carry the thread, and stay coherent acr
 - Service: `com.loom.sync` LaunchAgent (`~/Library/LaunchAgents/com.loom.sync.plist`) — `RunAtLoad` + `KeepAlive`,
   starts on boot and restarts if it dies. Logs: `~/.loom/server.log`.
 - Restart after editing `server.js`: `launchctl kickstart -k gui/$(id -u)/com.loom.sync`
-- Tailscale mount: `tailscale serve --bg --set-path /loom http://localhost:8743` (alongside `/job-agent`).
+- Tailscale mount: `tailscale serve --bg --set-path /loom http://localhost:8743`.
 - Update the app: edit `index.html` here — it's live immediately (no build, no deploy).
 
 ## Phase 1 (built)
