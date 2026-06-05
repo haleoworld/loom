@@ -788,6 +788,9 @@ function viewProject(){
 /* ---------- TASKS (ad-hoc must-dos — separate from the thinking system) ---------- */
 function dueLabel(ts){ if(!ts) return null; const ms=ts-now(), day=86400000; if(ms < -day) return {txt:`${Math.ceil(-ms/day)}d overdue`, over:true}; if(ms < day) return {txt:"due today", over:true}; return {txt:"due "+fmtDate(ts), over:false}; }
 function rollDue(ts, period){ const d=new Date(ts); if(period==="weekly") d.setDate(d.getDate()+7); else if(period==="monthly") d.setMonth(d.getMonth()+1); else if(period==="yearly") d.setFullYear(d.getFullYear()+1); return d.getTime(); }
+function taskMinutes(t){ return (t.sessions||[]).reduce((s,x)=>s+(x.minutes||0),0); }
+function fmtDur(min){ min=Math.max(0,Math.round(min)); if(min<60) return min+"m"; const h=Math.floor(min/60), m=min%60; return h+"h"+(m?(" "+m+"m"):""); }
+function runningMin(t){ return t.runningSince ? Math.max(0,(now()-t.runningSince)/60000) : 0; }
 function viewTasks(){
   const pr={high:0,med:1,low:2};
   const open=S.tasks.filter(t=>!t.done).sort((a,b)=>{ const ao=a.due||8e15, bo=b.due||8e15; if(ao!==bo) return ao-bo; return (pr[a.priority]??1)-(pr[b.priority]??1); });
@@ -799,7 +802,9 @@ function viewTasks(){
         ${dl?`<span class="pill" style="${dl.over?'color:var(--warn);border-color:#5a4a2a':''}">${dl.txt}</span>`:""}
         ${t.recurring?`<span class="pill">↻ ${t.recurring}</span>`:""}
         ${t.priority?`<span class="pill ${t.priority==='high'?'active':''}">${t.priority}</span>`:""}
+        ${t.runningSince?`<span class="pill" style="color:var(--bad);border-color:var(--bad)">● running ${fmtDur(runningMin(t))}</span>`:((t.sessions&&t.sessions.length)?`<span class="pill" data-act="taskLog" data-id="${t.id}" style="cursor:pointer">⏱ ${fmtDur(taskMinutes(t))} · ${t.sessions.length}×</span>`:"")}
       </div></div>
+    <button class="sm ghost" data-act="taskLog" data-id="${t.id}">⏱</button>
     <button class="sm ghost" data-act="editTask" data-id="${t.id}">✎</button>
     <button class="sm ghost" data-act="delTask" data-id="${t.id}">✕</button></div></div>`; };
   return `
@@ -820,6 +825,33 @@ function historyBlock(){
   if(!items.length) return "";
   return `<h2>Plans &amp; reflections</h2>` + items.map(it=>`<div class="card tap" data-act="viewEntry" data-kind="${it.kind}" data-id="${it.id}"><div class="row"><span class="pill ${it.kind==='plan'?'active':''}">${it.kind==='plan'?'📋 plan':'✎ reflection'}</span><span class="grow truncate sm muted">${esc((it.body||"").replace(/\s+/g," ").slice(0,60))}</span><span class="sm faint">${ago(it.createdAt)}</span></div></div>`).join("");
 }
+let logPrefill=null;  // minutes to prefill into the session form after stopping the timer
+function openTaskLog(id){
+  const t=S.tasks.find(x=>x.id===id); if(!t) return;
+  t.sessions=t.sessions||[];
+  const total=taskMinutes(t), n=t.sessions.length, running=!!t.runningSince;
+  const hist = n ? t.sessions.slice().sort((a,b)=>b.at-a.at).map(s=>`<div class="card" style="padding:9px 11px;margin-top:8px"><div class="row sm" style="gap:8px"><span class="pill">${fmtDur(s.minutes)}</span><span class="grow faint">${fmtDate(s.at)}</span><button class="sm ghost" data-act="delSession" data-tid="${t.id}" data-sid="${s.id}">✕</button></div>${s.note?`<div class="sm" style="margin-top:6px;white-space:pre-wrap">${esc(s.note)}</div>`:""}</div>`).join("") : `<div class="muted sm">No sessions yet — start the timer or log one manually.</div>`;
+  openSheet("⏱ "+esc(t.title), `
+    <div class="sm muted" style="margin-bottom:12px">Total <b style="color:var(--text)">${fmtDur(total)}</b> across ${n} session${n===1?"":"s"}${t.done?' · <span style="color:var(--accent)">✓ done</span>':""}</div>
+    ${running
+      ? `<button class="primary grow" data-act="stopTimer" data-id="${t.id}" style="width:100%">⏹ Stop timer (${fmtDur(runningMin(t))} so far)</button>`
+      : `<button class="grow" data-act="startTimer" data-id="${t.id}" style="width:100%">▶ Start timer</button>`}
+    <div style="margin-top:14px">
+      <label class="fld">Log a session</label>
+      <div class="row" style="gap:8px;align-items:center"><input id="sessMin" type="number" inputmode="numeric" placeholder="min" value="${logPrefill!=null?logPrefill:''}" style="width:90px"/><span class="sm muted">minutes</span></div>
+      <textarea id="sessNote" rows="3" placeholder="Progress this session · problems you hit · where to pick up next…" style="margin-top:8px">${esc(logDraftNote||"")}</textarea>
+      <button class="primary grow" data-act="addSession" data-id="${t.id}" style="width:100%;margin-top:8px">＋ Add session</button>
+    </div>
+    <h3 style="margin:18px 0 0;font-size:14px">History</h3>
+    ${hist}
+    <div class="btnrow" style="margin-top:16px">
+      ${t.done?`<button class="grow" data-act="reopenTask" data-id="${t.id}">↩ Reopen</button>`:`<button class="primary grow" data-act="finishTask" data-id="${t.id}">✓ Mark done</button>`}
+      <button class="ghost" data-act="closeSheet">Close</button>
+    </div>
+  `);
+  logPrefill=null; logDraftNote="";
+}
+let logDraftNote="";
 /* ---------- PLAN & COACHING prompt (used in-app now; Phase B will call this via API) ---------- */
 function tasksBlock(){ const o=S.tasks.filter(t=>!t.done); return o.length? o.map(t=>`  - ${t.title}${t.due?` [due ${fmtDate(t.due)}]`:""}${t.recurring?` [repeats ${t.recurring}]`:""}${t.priority?` [${t.priority}]`:""}`).join("\n") : "  (no tasks logged)"; }
 function openActionsBlock(){ const a=S.threads.filter(t=>t.outcome && (t.outcome.type==="decision"||t.outcome.type==="action")); return a.length? a.map(t=>`  - [${t.outcome.type}] ${t.title}: ${t.outcome.content}${t.outcome.deadline?` (by ${fmtDate(t.outcome.deadline)})`:""}`).join("\n") : "  (none)"; }
@@ -1098,7 +1130,7 @@ const ACT = {
   viewEntry(b){ const list=b.dataset.kind==="plan"?S.plans:S.reflections; const it=list.find(x=>x.id===b.dataset.id); if(!it) return; openSheet(b.dataset.kind==="plan"?"Saved plan":"Reflection",`<div class="sm faint" style="margin-bottom:8px">${new Date(it.createdAt).toLocaleString()}</div><div class="mdbody">${mdToHtml(it.body)}</div><div class="btnrow" style="margin-top:12px"><button class="primary grow" data-act="copyEntry" data-kind="${b.dataset.kind}" data-id="${it.id}">⧉ Copy</button><button class="sm danger" data-act="delEntry" data-kind="${b.dataset.kind}" data-id="${it.id}">Delete</button><button class="ghost" data-act="closeSheet">Close</button></div>`); },
   copyEntry(b){ const list=b.dataset.kind==="plan"?S.plans:S.reflections; const it=list.find(x=>x.id===b.dataset.id); if(it) copy(it.body); },
   delEntry(b){ if(!confirm("Delete this entry?")) return; if(b.dataset.kind==="plan") S.plans=S.plans.filter(x=>x.id!==b.dataset.id); else S.reflections=S.reflections.filter(x=>x.id!==b.dataset.id); save(); closeSheet(); render(); },
-  addTask(){ const i=el("taskInput"); const v=i?i.value.trim():""; if(!v) return; S.tasks.push({id:uid(),title:v,done:false,createdAt:now(),due:null,recurring:null,priority:null,note:""}); save(); render(); const j=el("taskInput"); if(j) j.focus(); },
+  addTask(){ const i=el("taskInput"); const v=i?i.value.trim():""; if(!v) return; S.tasks.push({id:uid(),title:v,done:false,createdAt:now(),due:null,recurring:null,priority:null,note:"",sessions:[],runningSince:null}); save(); render(); const j=el("taskInput"); if(j) j.focus(); },
   toggleTask(b){ const t=S.tasks.find(x=>x.id===b.dataset.id); if(!t) return; if(!t.done && t.recurring && t.due){ t.due=rollDue(t.due,t.recurring); toast("↻ rolled to next "+t.recurring); } else { t.done=!t.done; t.doneAt=t.done?now():null; } save(); render(); },
   editTask(b){ const t=S.tasks.find(x=>x.id===b.dataset.id); if(!t) return; const dueVal=t.due?new Date(t.due).toISOString().slice(0,10):""; openSheet("Edit task",`
     <label class="fld">Task</label><input id="etTitle" value="${esc(t.title)}"/>
@@ -1110,6 +1142,13 @@ const ACT = {
     <div class="btnrow" style="margin-top:14px"><button class="primary grow" data-act="saveTask">Save</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`); },
   saveTask(){ const t=S.tasks.find(x=>x.id===el("etId").value); if(!t) return; const ti=el("etTitle").value.trim(); if(ti) t.title=ti; const dv=el("etDue").value; t.due=dv?new Date(dv+"T09:00").getTime():null; t.recurring=el("etRepeat").value||null; t.priority=el("etPri").value||null; t.note=el("etNote").value.trim(); save(); closeSheet(); render(); },
   delTask(b){ if(!confirm("Delete this task?")) return; S.tasks=S.tasks.filter(x=>x.id!==b.dataset.id); save(); render(); },
+  taskLog(b){ logPrefill=null; logDraftNote=""; openTaskLog(b.dataset.id); },
+  startTimer(b){ const t=S.tasks.find(x=>x.id===b.dataset.id); if(!t) return; const nt=el("sessNote"); if(nt) logDraftNote=nt.value; t.runningSince=now(); save(); render(); openTaskLog(t.id); toast("▶ timer started"); },
+  stopTimer(b){ const t=S.tasks.find(x=>x.id===b.dataset.id); if(!t||!t.runningSince) return; const nt=el("sessNote"); if(nt) logDraftNote=nt.value; logPrefill=Math.max(1,Math.round(runningMin(t))); t.runningSince=null; save(); render(); openTaskLog(t.id); toast("⏹ stopped — review & add the session"); },
+  addSession(b){ const t=S.tasks.find(x=>x.id===b.dataset.id); if(!t) return; t.sessions=t.sessions||[]; const min=Math.round(+(el("sessMin").value)||0); const note=(el("sessNote").value||"").trim(); if(!min && !note){ toast("Enter minutes or a note first"); return; } t.sessions.push({id:uid(),at:now(),minutes:min,note}); logDraftNote=""; logPrefill=null; save(); render(); openTaskLog(t.id); toast("✓ session logged"+(min?" ("+fmtDur(min)+")":"")); },
+  delSession(b){ const t=S.tasks.find(x=>x.id===b.dataset.tid); if(!t) return; const nt=el("sessNote"); if(nt) logDraftNote=nt.value; t.sessions=(t.sessions||[]).filter(s=>s.id!==b.dataset.sid); save(); render(); openTaskLog(t.id); },
+  finishTask(b){ const t=S.tasks.find(x=>x.id===b.dataset.id); if(!t) return; if(t.runningSince){ const m=Math.max(1,Math.round(runningMin(t))); t.sessions=t.sessions||[]; t.sessions.push({id:uid(),at:now(),minutes:m,note:""}); t.runningSince=null; } t.done=true; t.doneAt=now(); logDraftNote=""; save(); closeSheet(); render(); toast("✓ done — "+fmtDur(taskMinutes(t))+" total"); },
+  reopenTask(b){ const t=S.tasks.find(x=>x.id===b.dataset.id); if(!t) return; t.done=false; t.doneAt=null; save(); render(); openTaskLog(t.id); },
   addFragmentTo(b){ UI.tab="capture"; render(); setTimeout(()=>{ const s=el("capThread"); if(s){s.value=b.dataset.id;} UI.captureMode="engage_ai"; el("capBody").focus(); },30); toast("Capturing into this thread"); },
   recordTurn(b){ sheetRecordTurn(b.dataset.id); },
   confirmTurn(){
