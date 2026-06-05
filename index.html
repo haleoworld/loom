@@ -124,6 +124,11 @@
   .todocard.push{border-left-color:#f0883e;} .todocard.push .tagpill{background:rgba(240,136,62,.18); color:#f0a96b;} .todocard.push .rank{background:#db6d28;}
   .todocard.automate{border-left-color:#bc8cff;} .todocard.automate .tagpill{background:rgba(188,140,255,.18); color:#d2a8ff;} .todocard.automate .rank{background:#a371f7;}
   .todocard.other{border-left-color:var(--line);} .todocard.other .tagpill{background:rgba(255,255,255,.1); color:var(--muted);}
+  .bigrec{display:block; width:100%; min-height:96px; font-size:22px; font-weight:700; border-radius:18px; margin:4px 0 0; border:2px solid var(--accent); color:var(--accent); background:rgba(88,166,255,.08); -webkit-tap-highlight-color:transparent;}
+  .bigrec.rec-on{border-color:var(--bad); color:var(--bad); background:rgba(248,81,73,.12); animation:recpulse 1.4s ease-in-out infinite;}
+  @keyframes recpulse{0%,100%{background:rgba(248,81,73,.12);}50%{background:rgba(248,81,73,.26);}}
+  .hftoggle{font-size:13px; padding:8px 14px; border-radius:20px; border:1px solid var(--line); background:transparent; color:var(--muted);}
+  .hftoggle.on{border-color:var(--accent); color:var(--accent); background:rgba(88,166,255,.1);}
 </style>
 <!--LOOM_CONFIG-->
 </head>
@@ -490,7 +495,7 @@ function corpusMarkdown(){
 function recordOK(){ return !!(SYNC && SYNC.transcribe && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder); }  // function (not const) so it reads SYNC at call-time — avoids referencing SYNC before it's declared
 let mediaRec=null, mediaChunks=[], recording=false, pendingAudio=null;
 function setRecStatus(t){ const e=el("recStatus"); if(e) e.textContent=t||""; }
-function updateRec(){ const b=el("recBtn"); if(b){ b.textContent=recording?"⏹ Stop":"● Rec"; b.style.color=recording?"var(--bad)":""; b.style.borderColor=recording?"var(--bad)":""; } }
+function updateRec(){ const b=el("recBtn"); if(!b) return; const big=b.classList.contains("bigrec"); b.textContent=recording?(big?"⏹ Tap when done":"⏹ Stop"):(big?"● Tap to speak":"● Rec"); if(big){ b.classList.toggle("rec-on",recording); } else { b.style.color=recording?"var(--bad)":""; b.style.borderColor=recording?"var(--bad)":""; } }
 async function recordToggle(){
   if(!recordOK()){ toast("Recording needs the Mini — it's offline"); return; }
   if(recording){ try{ mediaRec.stop(); }catch(e){} return; }
@@ -515,8 +520,21 @@ async function transcribeBlob(blob){
     if(!r.ok) throw new Error(r.status);
     const j=await r.json();
     setRecStatus("");
-    showTranscriptConfirm(j.text||"", j.audioId, j.bytes);
-  }catch(e){ setRecStatus(""); toast("Transcription failed — try again, or just type"); }
+    if(handsFree()) autoLog(j.text||"", j.audioId, j.bytes);
+    else showTranscriptConfirm(j.text||"", j.audioId, j.bytes);
+  }catch(e){ setRecStatus(""); toast("Transcription failed — try again, or just type"); if(handsFree()) speak("Sorry, that didn't save. Try again."); }
+}
+// Hands-free (driving) capture: speak → auto-saves a raw fragment, no confirm panel, no Save tap.
+function handsFree(){ try{ return localStorage.getItem("loom_handsfree")==="1"; }catch(e){ return false; } }
+function speak(t){ try{ const ss=window.speechSynthesis; if(ss){ ss.cancel(); const u=new SpeechSynthesisUtterance(t); u.rate=1.0; ss.speak(u); } }catch(e){} }
+function autoLog(text, audioId, bytes){
+  text=(text||"").trim();
+  if(!text){ toast("Didn't catch that — try again"); speak("I didn't catch that. Try again."); return; }
+  S.fragments.push({ id:uid(), createdAt:now(), body:text, type:null, threadId:null, mode:"just_log", fatigueLevel:null, voiceId:audioId||null, voiceBytes:bytes||0, viaHandsFree:true });
+  save();
+  toast("✓ Saved: "+text.slice(0,48));
+  speak("Saved");
+  if(UI.tab==="capture") render();
 }
 function showTranscriptConfirm(text, audioId, bytes){
   openSheet("Is this what you said?", `
@@ -597,13 +615,16 @@ function backupNudge(){
 /* ---------- CAPTURE ---------- */
 function viewCapture(){
   const threadOpts = activeThreads().map(t=>`<option value="${t.id}">${esc(t.title)}</option>`).join("");
+  const hf = recordOK() && handsFree();
   return `
   <h2>New fragment</h2>
+  ${hf?`<button id="recBtn" class="bigrec" data-act="record">● Tap to speak</button>
+  <p class="faint sm" style="text-align:center;margin:8px 2px 2px">🚗 Hands-free: tap, talk, tap again — it saves itself and says “Saved”. Sort later.</p>`:""}
   <div class="card">
     <div style="position:relative">
       <textarea id="capBody" rows="4" placeholder="What just happened, what you're thinking, an observation…" oninput="capInput()" autofocus>${esc(capDraft)}</textarea>
       ${(SYNC&&SYNC.summarize)?`<button id="sumBtn" class="sm ghost" data-act="summarize" style="position:absolute;right:74px;bottom:10px;min-height:32px;padding:4px 10px">✦ Sum</button>`:""}
-      ${recordOK()?`<button id="recBtn" class="sm ghost" data-act="record" style="position:absolute;right:8px;bottom:10px;min-height:32px;padding:4px 12px">● Rec</button>`:""}
+      ${recordOK()&&!hf?`<button id="recBtn" class="sm ghost" data-act="record" style="position:absolute;right:8px;bottom:10px;min-height:32px;padding:4px 12px">● Rec</button>`:""}
     </div>
     <div id="recStatus" class="sm muted" style="margin:5px 2px 0"></div>
     <div id="capSuggest"></div>
@@ -615,6 +636,7 @@ function viewCapture(){
       ? "Stored, no question. For tired moments."
       : "On save, I build a one-question prompt for you to paste into Claude."}</p>
     <p class="faint sm" style="margin:6px 2px 0">${recordOK?"● Rec records your voice and transcribes it on your Mini (auto English/粵). Or use your keyboard's mic key.":"🎤 Tip: use your keyboard's mic key to dictate — Cantonese works if enabled in iOS dictation settings."}</p>
+    ${recordOK()?`<button class="hftoggle ${hf?'on':''}" data-act="handsFreeToggle" style="margin-top:10px">🚗 Hands-free mode ${hf?'· ON':'· off'}</button>`:""}
 
     <details style="margin-top:12px">
       <summary class="muted sm" style="cursor:pointer">Optional: thread, type, fatigue</summary>
@@ -1067,6 +1089,7 @@ function saveFragment(){
 
 const ACT = {
   capMode(b){ UI.captureMode=b.dataset.v; render(); },
+  handsFreeToggle(){ const on=!handsFree(); try{ localStorage.setItem("loom_handsfree", on?"1":"0"); }catch(e){} toast(on?"🚗 Hands-free on — tap, talk, it saves itself":"Hands-free off"); if(on) speak("Hands free on"); render(); },
   fatigue(b){ capFatigue=+b.dataset.v; document.querySelectorAll('#capFatigue .chip').forEach(c=>c.classList.toggle('on',c===b)); },
   saveFragment,
   threadFilter(b){ navigate("#/threads/"+b.dataset.v); },
