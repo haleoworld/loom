@@ -227,13 +227,13 @@ function mdToHtml(src){
     if(h){ closeList(); const lv=h[1].length; html+="<h"+lv+">"+mdInline(esc(h[2]))+"</h"+lv+">"; i++; continue; }
     const q=line.match(/^\s*>\s?(.*)$/);
     if(q){ closeList(); html+="<blockquote>"+mdInline(esc(q[1]))+"</blockquote>"; i++; continue; }
-    const ul=line.match(/^\s*[-*]\s+(.*)$/);
+    const ul=line.match(/^\s*[-*•·]\s+(.*)$/);
     if(ul){ if(list!=="ul"){ closeList(); html+="<ul>"; list="ul"; } html+="<li>"+mdInline(esc(ul[1]))+"</li>"; i++; continue; }
     const ol=line.match(/^\s*\d+\.\s+(.*)$/);
     if(ol){ if(list!=="ol"){ closeList(); html+="<ol>"; list="ol"; } html+="<li>"+mdInline(esc(ol[1]))+"</li>"; i++; continue; }
     if(/^\s*$/.test(line)){ closeList(); i++; continue; }
     closeList(); const para=[line]; i++;
-    while(i<lines.length && !/^\s*$/.test(lines[i]) && !/^#{1,6}\s/.test(lines[i]) && !/^\s*[-*]\s+/.test(lines[i]) && !/^\s*\d+\.\s+/.test(lines[i]) && !/^\s*>/.test(lines[i]) && !/^\s*\|.*\|\s*$/.test(lines[i]) && !/^\s*(---+|\*\*\*+|___+)\s*$/.test(lines[i])){ para.push(lines[i]); i++; }
+    while(i<lines.length && !/^\s*$/.test(lines[i]) && !/^#{1,6}\s/.test(lines[i]) && !/^\s*[-*•·]\s+/.test(lines[i]) && !/^\s*\d+\.\s+/.test(lines[i]) && !/^\s*>/.test(lines[i]) && !/^\s*\|.*\|\s*$/.test(lines[i]) && !/^\s*(---+|\*\*\*+|___+)\s*$/.test(lines[i])){ para.push(lines[i]); i++; }
     html+="<p>"+mdInline(esc(para.join(" "))).replace(/(\S) *(🎯|✅|💬|📌|⚡|🔑|⏰|🟢|🔴|⛔)/g,"$1<br>$2 ")+"</p>";
   }
   closeList(); return html;
