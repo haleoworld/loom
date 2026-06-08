@@ -334,8 +334,8 @@ function saveCoachState(s) { try { fs.writeFileSync(COACH_STATE, JSON.stringify(
 setInterval(() => {
   if (!tgToken() || !tgChat() || !anthKey()) return;
   const now = new Date(), h = now.getHours(), m = now.getMinutes(), today = now.toISOString().slice(0, 10), st = coachState();
-  // Automatic: WEEKLY only — a full week plan with a day-by-day breakdown, Sunday 19:00.
-  if (now.getDay() === 0 && h === 19 && m < 5 && st.lastWeekly !== today) { st.lastWeekly = today; saveCoachState(st); runCoach("weekly", () => {}); }
+  // Automatic: WEEKLY only — a full week plan with a day-by-day breakdown, Friday 14:00 (his review ritual: kids in school, less busy at work).
+  if (now.getDay() === 5 && h === 14 && m < 5 && st.lastWeekly !== today) { st.lastWeekly = today; saveCoachState(st); runCoach("weekly", () => {}); }
 }, 60000);
 
 // ---- Telegram command polling (one consumer of getUpdates) ----
