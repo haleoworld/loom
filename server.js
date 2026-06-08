@@ -92,17 +92,27 @@ ${lpTxt}
 
 ## CONTEXT: busy life, 2 young kids; limited time/energy is my #1 constraint. Roots: reclaim time/energy; communicate + delegate instead of doing everything; become the orchestrator not the doer. Bias me toward delegating or dropping.
 
-${kind === "weekly" ? `## GIVE ME — a WEEKLY plan I can run all week (phone-readable):
-1. TOP TODOs for the week ranked by priority×urgency, each tagged DO / DELEGATE (to whom) / PUSH-BACK or DROP / AUTOMATE.
-2. GOAL — this year / quarter / month (one line each).
-3. THIS WEEK's goal + the ONE must-do (high-priority & coherent) + 1-line why.
-4. DAY-BY-DAY — for each day Mon→Sun, format it EXACTLY like this with each part on its OWN line (blank line between days):
-**Monday Jun X**
-🎯 Focus: …
-✅ Must-do: … (one small slice of the weekly must-do)
-💬 Why: … (one line)
-Spread the load realistically given my limited time and 2 young kids; lighter on weekends.
-5. ON-TRACK & COHERENCE — am I aligned or drifting? One sharp coaching line.` : `## GIVE ME — a short TODAY plan (phone-readable):
+${kind === "weekly" ? `## GIVE ME — a WEEKLY plan that is EXACTLY THREE THINGS, so at one glance I know my main focus vs secondary vs chore. Keep it tight and phone-readable. NO long tables, NO 7-day grid, NO multi-tier goals dump — that overwhelms me and hides what matters.
+
+Start with a 2-3 line HONEST CHECK of last week (what moved, what I avoided). Brief.
+
+Then EXACTLY these three, clearly labelled, in this order:
+
+## ① 🔵 MAIN FOCUS
+The single heaviest, most important thing this week — it gets my PRIME energy. One line to name it, then break it into the few concrete little next-steps it decomposes into. Most of my week goes here.
+
+## ② 🟢 SECONDARY FOCUS
+Also decomposes into little tasks, but LOW energy — ~15-30 min/day, just show up and chip away (it may graduate to the main focus later). One line + its little steps.
+
+## ③ 🟠 ONE CHORE
+The SINGLE most pressing chore — urgent-ish but NOT important; annoying, often a one-off. Rules you MUST honor:
+- DELEGATE it if at all possible (say to whom). Only do it myself if it truly can't be handed off.
+- It must be PLANNED before any execution: how should it be done? who do I talk to first to surface blockers? Resolve those FIRST, then execute when the time is right. If it isn't planned/unblocked yet, the step is to plan/unblock it — not to grind on it.
+- ONE chore max. Do NOT let chores eat the week. Suggest a 2nd chore ONLY if there's clear spare capacity after the main + secondary focus.
+
+End with ONE sharp coherence line: am I putting my energy on the MAIN focus, or letting chores and comfortable busywork take over?
+
+Reply in the language my entries are written in.` : `## GIVE ME — a short TODAY plan (phone-readable):
 1. TOP 3 todos for today ranked, each tagged DO / DELEGATE (to whom) / PUSH-BACK or DROP / AUTOMATE.
 2. TODAY's ONE must-do + 1-line why.
 3. ON-TRACK & COHERENCE — one sharp coaching line.`}
@@ -110,7 +120,7 @@ Reply in the language my entries are written in.`;
 }
 function runCoach(kind, cb) {
   let data; try { data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch (e) { return cb && cb(e); }
-  const prompt = buildPlanPrompt(data, kind) + (kind === "weekly" ? "\n\n(WEEKLY plan — be reflective; check this week against last week's plan, then lay out the full week day-by-day.)" : "\n\n(quick check-in — keep it short and focused on TODAY.)");
+  const prompt = buildPlanPrompt(data, kind) + (kind === "weekly" ? "\n\n(WEEKLY plan — be reflective; check this week against last week's plan, then give EXACTLY the three things: main focus, secondary focus, one chore. Keep it tight.)" : "\n\n(quick check-in — keep it short and focused on TODAY.)");
   callAnthropic(prompt, 2000, (err, text) => {
     if (err) return cb && cb(err);
     try { data.plans = data.plans || []; data.plans.push({ id: "p_" + crypto.randomBytes(4).toString("hex"), createdAt: Date.now(), body: text, source: kind }); data.meta = data.meta || {}; data.meta.updatedAt = Date.now(); fs.writeFileSync(DATA_FILE, JSON.stringify(data)); } catch (e) {}
