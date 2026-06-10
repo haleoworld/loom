@@ -670,6 +670,8 @@ function recentFragments(){
 
 /* ---------- THREADS ---------- */
 let threadFilter = "active";
+let taskTab = "todo";       // tasks-page subtab: "todo" | "plans"
+let todoShowAll = false;    // expand the to-do list past the first 10
 function viewThreads(){
   const filters = [["active","Active"],["sorted","Sorted"],["parked","Parked"],["killed","Killed"],["all","All"]];
   const list = S.threads
@@ -802,7 +804,7 @@ function effPriority(t){ let p=t.priority||null; if(t.escalateWithin && t.due &&
 function isEscalated(t){ return (t.priority||null)!==effPriority(t); }
 function viewTasks(){
   const pr={critical:0,high:1,med:2,low:3};
-  const open=S.tasks.filter(t=>!t.done).sort((a,b)=>{ const ao=a.due||8e15, bo=b.due||8e15; if(ao!==bo) return ao-bo; return (pr[effPriority(a)]??2)-(pr[effPriority(b)]??2); });
+  const open=S.tasks.filter(t=>!t.done).sort((a,b)=>{ const pa=pr[effPriority(a)]??4, pb=pr[effPriority(b)]??4; if(pa!==pb) return pa-pb; return (a.due||8e15)-(b.due||8e15); });
   const done=S.tasks.filter(t=>t.done).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
   const row=t=>{ const dl=dueLabel(t.due); const ep=effPriority(t); return `<div class="card${ep&&!t.done?' pri-'+ep:''}" style="padding:12px"><div class="row" style="gap:10px;align-items:flex-start">
     <button class="sm ghost" data-act="toggleTask" data-id="${t.id}" style="min-height:28px;padding:2px 10px">${t.done?"☑":"☐"}</button>
@@ -816,6 +818,9 @@ function viewTasks(){
     <button class="sm ghost" data-act="taskLog" data-id="${t.id}">⏱</button>
     <button class="sm ghost" data-act="editTask" data-id="${t.id}">✎</button>
     <button class="sm ghost" data-act="delTask" data-id="${t.id}">✕</button></div></div>`; };
+  const LIMIT=10;
+  const shown = todoShowAll ? open : open.slice(0,LIMIT);
+  const moreBtn = open.length>LIMIT ? `<button class="ghost" data-act="toggleTodoAll" style="width:100%;margin-top:10px">${todoShowAll?"▲ Show less":("▾ Show "+(open.length-LIMIT)+" more")}</button>` : "";
   return `
   <div class="card">
     <div class="row" style="gap:8px"><input id="taskInput" class="grow" placeholder="Something to just get done…"/><button class="primary" data-act="addTask">Add</button></div>
@@ -823,10 +828,15 @@ function viewTasks(){
   </div>
   <div class="btnrow"><button class="primary grow" data-act="generatePlan">◆ Generate plan &amp; coaching</button><button class="grow" data-act="reflect">✎ Reflect</button><button class="ghost" data-act="savePlan">＋ Save plan</button></div>
   <p class="faint sm" style="margin:2px">${(SYNC&&SYNC.plan)?"Generate runs your AI coach and saves the plan in the history below. Reflect feeds your weekly review into it.":"Generate copies a coaching prompt for Claude — paste the reply back via “Save plan”. Reflect feeds your weekly review into the coaching."}</p>
-  <h2>To do${open.length?` (${open.length})`:""}</h2>
-  ${open.length? open.map(row).join("") : `<div class="muted sm">No open tasks. 🎉</div>`}
-  ${done.length?`<details style="margin-top:10px"><summary class="muted sm" style="cursor:pointer">Done (${done.length})</summary><div style="margin-top:8px">${done.map(row).join("")}</div></details>`:""}
-  ${historyBlock()}
+  <div class="seg" style="margin:14px 0 12px">
+    <button class="${taskTab==='todo'?'on':''}" data-act="taskTab" data-v="todo">To do${open.length?` (${open.length})`:""}</button>
+    <button class="${taskTab==='plans'?'on':''}" data-act="taskTab" data-v="plans">Plans &amp; reflections</button>
+  </div>
+  ${taskTab==='plans' ? (historyBlock() || `<div class="muted sm">No plans or reflections yet.</div>`) : `
+    ${open.length? shown.map(row).join("") : `<div class="muted sm">No open tasks. 🎉</div>`}
+    ${moreBtn}
+    ${done.length?`<details style="margin-top:14px"><summary class="muted sm" style="cursor:pointer">Done (${done.length})</summary><div style="margin-top:8px">${done.map(row).join("")}</div></details>`:""}
+  `}
   `;
 }
 function historyBlock(){
@@ -1073,7 +1083,7 @@ function applyHash(){
   else if(sec==="thread"){ if(parts[1] && thread(parts[1])){ UI.tab="thread"; UI.threadId=parts[1]; } else UI.tab="threads"; }
   else if(sec==="projects"){ UI.tab="projects"; }
   else if(sec==="project"){ if(parts[1] && project(parts[1])){ UI.tab="project"; UI.projectId=parts[1]; } else UI.tab="projects"; }
-  else if(sec==="tasks"){ UI.tab="tasks"; }
+  else if(sec==="tasks"){ UI.tab="tasks"; taskTab = (parts[1]==="plans") ? "plans" : "todo"; }
   else if(sec==="global"){ UI.tab="global"; }
   else { UI.tab="capture"; }
   window.scrollTo(0,0); render();
@@ -1111,6 +1121,8 @@ const ACT = {
   fatigue(b){ capFatigue=+b.dataset.v; document.querySelectorAll('#capFatigue .chip').forEach(c=>c.classList.toggle('on',c===b)); },
   saveFragment,
   threadFilter(b){ navigate("#/threads/"+b.dataset.v); },
+  taskTab(b){ todoShowAll=false; navigate("#/tasks/"+b.dataset.v); },
+  toggleTodoAll(){ todoShowAll=!todoShowAll; render(); },
   newThread(){ sheetNewThread(); },
   newLifeThread(){ openSheet("New thread about my life",`<label class="fld">What's on your mind about your life right now?</label><input id="ntTitle" placeholder="e.g. Why do I always feel out of time and energy?"/><div class="btnrow" style="margin-top:16px"><button class="primary grow" data-act="createLifeThread">Create</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`); },
   createLifeThread(){ const title=el("ntTitle").value.trim(); if(!title){toast("Title?");return;} const t={id:uid(),title,domain:"personal",projectId:null,status:"active",depthLevel:1,openedAt:now(),lastActivityAt:now(),outcome:null}; S.threads.push(t); save(); closeSheet(); openThread(t.id); },
