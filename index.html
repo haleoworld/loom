@@ -795,7 +795,7 @@ function viewProject(){
 /* ---------- GLOBAL ---------- */
 /* ---------- TASKS (ad-hoc must-dos — separate from the thinking system) ---------- */
 function dueLabel(ts){ if(!ts) return null; const ms=ts-now(), day=86400000; if(ms < -day) return {txt:`${Math.ceil(-ms/day)}d overdue`, over:true}; if(ms < day) return {txt:"due today", over:true}; return {txt:"due "+fmtDate(ts), over:false}; }
-function rollDue(ts, period){ const d=new Date(ts); if(period==="weekly") d.setDate(d.getDate()+7); else if(period==="monthly") d.setMonth(d.getMonth()+1); else if(period==="yearly") d.setFullYear(d.getFullYear()+1); return d.getTime(); }
+function rollDue(ts, period){ const d=new Date(ts); if(period==="daily") d.setDate(d.getDate()+1); else if(period==="weekly") d.setDate(d.getDate()+7); else if(period==="monthly") d.setMonth(d.getMonth()+1); else if(period==="yearly") d.setFullYear(d.getFullYear()+1); return d.getTime(); }
 function taskMinutes(t){ return (t.sessions||[]).reduce((s,x)=>s+(x.minutes||0),0); }
 function fmtDur(min){ min=Math.max(0,Math.round(min)); if(min<60) return min+"m"; const h=Math.floor(min/60), m=min%60; return h+"h"+(m?(" "+m+"m"):""); }
 function runningMin(t){ return t.runningSince ? Math.max(0,(now()-t.runningSince)/60000) : 0; }
@@ -1156,7 +1156,7 @@ const ACT = {
   editTask(b){ const t=S.tasks.find(x=>x.id===b.dataset.id); if(!t) return; const dueVal=t.due?new Date(t.due).toISOString().slice(0,10):""; openSheet("Edit task",`
     <label class="fld">Task</label><input id="etTitle" value="${esc(t.title)}"/>
     <label class="fld">Due date</label><input id="etDue" type="date" value="${dueVal}"/>
-    <label class="fld">Repeat</label><select id="etRepeat">${["","weekly","monthly","yearly"].map(r=>`<option value="${r}" ${(t.recurring||"")===r?"selected":""}>${r||"— none —"}</option>`).join("")}</select>
+    <label class="fld">Repeat</label><select id="etRepeat">${["","daily","weekly","monthly","yearly"].map(r=>`<option value="${r}" ${(t.recurring||"")===r?"selected":""}>${r||"— none —"}</option>`).join("")}</select>
     <label class="fld">Priority</label><select id="etPri">${["","critical","high","med","low"].map(p=>`<option value="${p}" ${(t.priority||"")===p?"selected":""}>${p||"— none —"}</option>`).join("")}</select>
     <label class="fld">Note (optional)</label><textarea id="etNote" rows="2">${esc(t.note||"")}</textarea>
     <input type="hidden" id="etId" value="${t.id}"/>
