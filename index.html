@@ -832,13 +832,14 @@ function viewTasks(){
     <button class="${taskTab==='todo'?'on':''}" data-act="taskTab" data-v="todo">To do${open.length?` (${open.length})`:""}</button>
     <button class="${taskTab==='plans'?'on':''}" data-act="taskTab" data-v="plans">Plans &amp; reflections</button>
   </div>
-  ${taskTab==='plans' ? (historyBlock() || `<div class="muted sm">No plans or reflections yet.</div>`) : `
+  ${taskTab==='plans' ? (condoLink() + (historyBlock() || `<div class="muted sm">No plans or reflections yet.</div>`)) : `
     ${open.length? shown.map(row).join("") : `<div class="muted sm">No open tasks. 🎉</div>`}
     ${moreBtn}
     ${done.length?`<details style="margin-top:14px"><summary class="muted sm" style="cursor:pointer">Done (${done.length})</summary><div style="margin-top:8px">${done.map(row).join("")}</div></details>`:""}
   `}
   `;
 }
+function condoLink(){ const base=(typeof SYNC!=="undefined"&&SYNC&&SYNC.scope)||""; return `<a class="card tap" href="${base}condo" target="_blank" style="display:block;text-decoration:none;border-color:var(--accent-dim)"><span style="color:var(--accent);font-weight:600">🏠 Condo decision calculator (interactive) ↗</span> <span class="sm faint">temporary — remove when decided</span></a>`; }
 function historyBlock(){
   const items=[...S.plans.map(p=>({...p,kind:"plan"})), ...S.reflections.map(r=>({...r,kind:"reflection"}))].sort((a,b)=>b.createdAt-a.createdAt);
   if(!items.length) return "";

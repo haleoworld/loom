@@ -311,6 +311,16 @@ const server = http.createServer((req, res) => {
     return send(res, 200, JSON.stringify({ deleted: n }), TYPES[".json"]);
   }
 
+  // ---- temporary: condo decision calculator (served from DATA_DIR so the figures stay OUT of the public repo) ----
+  if (urlPath === "/condo" && req.method === "GET") {
+    fs.readFile(path.join(DATA_DIR, "condo-decision-cases.html"), (err, buf) => {
+      if (err) return send(res, 404, "condo page not found");
+      res.setHeader("Cache-Control", "no-cache");
+      send(res, 200, buf, TYPES[".html"]);
+    });
+    return;
+  }
+
   // ---- static app ----
   if (req.method !== "GET") return send(res, 405, "method not allowed");
   let file = urlPath === "/" ? "index.html" : urlPath.replace(/^\/+/, "");
