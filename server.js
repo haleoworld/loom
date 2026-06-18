@@ -147,7 +147,7 @@ ${social || "(small learning-out-loud channel; first principles; clearer thinkin
 - Rank by IMPACT TO ME given what's live above — not generic popularity. Each must connect to something specific I'm dealing with.
 - For each suggestion set "threadIds" to the bracketed IDs from the ACTIVE THREADS list above that it maps to (so I can jump straight to that thinking). Use ONLY IDs from that list; omit if none truly fit.
 - Set "lang" to one of: "EN", "繁中", "简中".
-- 6-8 suggestions.
+- EXACTLY 4 suggestions — keep it tight and high-signal. Across the 4: at least 1 Chinese and 1 English, and mixed media (don't make all 4 books — include at least 1 YouTube or blog).
 
 ## OUTPUT — STRICT JSON ONLY, no prose, no markdown fences:
 {"suggestions":[{"title":"","creator":"","type":"book|podcast|youtube|article|blog|talk","lang":"EN|繁中|简中","relevance":"which of MY threads/problems this speaks to, by name","takeaway":"the specific thing I'll get","impact":1-5,"find":"how to find it (search hint, not a URL)","angle":"how I could turn this + my own experience into a short TorGroFish video/post","threadIds":["id-from-list"]}]}`;
@@ -279,7 +279,7 @@ const server = http.createServer((req, res) => {
     const data = readData();
     if (!data) return send(res, 500, JSON.stringify({ error: "no data on the Mini" }), TYPES[".json"]);
     let social = ""; try { social = fs.readFileSync(path.join(APP_DIR, "SOCIAL_IDENTITY.md"), "utf8").slice(0, 2000); } catch (e) {}
-    callAnthropic(buildLearnPrompt(data, social), 3500, (err, text) => {
+    callAnthropic(buildLearnPrompt(data, social), 2200, (err, text) => {
       if (err) { console.error("[loom] learn failed:", err.message); return send(res, 502, JSON.stringify({ error: err.message }), TYPES[".json"]); }
       let out; try { out = JSON.parse(String(text).replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim()); } catch (e) { out = { error: "parse", raw: text }; }
       send(res, 200, JSON.stringify(out), TYPES[".json"]);

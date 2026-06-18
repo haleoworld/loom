@@ -176,7 +176,7 @@ function load(){
     const raw = localStorage.getItem(KEY);
     if(raw) return migrate(JSON.parse(raw));
   }catch(e){ console.warn("load failed",e); }
-  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], tasks:[], reflections:[], plans:[], learn:[], learnSuggested:{at:0,items:[]}, domains:DEFAULT_DOMAINS.map(d=>[d[0],d[1]]), fragTypes:DEFAULT_FRAG_TYPES.slice(), meta:{lastBackup:0,updatedAt:0} };
+  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], tasks:[], reflections:[], plans:[], learn:[], learnBatches:[], domains:DEFAULT_DOMAINS.map(d=>[d[0],d[1]]), fragTypes:DEFAULT_FRAG_TYPES.slice(), meta:{lastBackup:0,updatedAt:0} };
 }
 function migrate(s){
   s.global = s.global || {models:[],goals:[]};
@@ -188,7 +188,12 @@ function migrate(s){
   s.reflections = s.reflections || [];
   s.plans = s.plans || [];
   s.learn = s.learn || [];
-  s.learnSuggested = s.learnSuggested || {at:0,items:[]};
+  s.learnBatches = s.learnBatches || [];
+  if(s.learnSuggested && Array.isArray(s.learnSuggested.items) && s.learnSuggested.items.length && !s.learnBatches.length){
+    s.learnBatches = [{id:Math.random().toString(36).slice(2,9), at:s.learnSuggested.at||0, items:s.learnSuggested.items}];
+  }
+  delete s.learnSuggested;
+  s.learn.forEach(it=>{ it.thoughts = it.thoughts || []; if(it.note){ it.thoughts.push({id:Math.random().toString(36).slice(2,9), at:it.savedAt||0, body:it.note}); delete it.note; } });
   s.meta = s.meta||{lastBackup:0,updatedAt:0};
   if(s.meta.updatedAt==null) s.meta.updatedAt=0;
   return s;
@@ -1099,16 +1104,21 @@ function learnLinks(x){
   L.push(["🔍 Search","https://www.google.com/search?q="+q]);
   return L;
 }
-function learnCard(x,saved,idx){
+function learnCard(x,opts){
+  opts=opts||{};
   const tchips=(x.threadIds||[]).map(id=>{ const th=(S.threads||[]).find(t=>t.id===id); return th?`<a class="pill" href="#/thread/${id}" style="text-decoration:none">↳ ${esc((th.title||"").slice(0,42))}</a>`:""; }).filter(Boolean).join(" ");
   const links=learnLinks(x).map(l=>`<a class="pill" href="${l[1]}" target="_blank" rel="noopener" style="text-decoration:none">${l[0]}</a>`).join("");
+  const curated=opts.curated; const nThoughts=(x.thoughts||[]).length; const lastTh=nThoughts?x.thoughts[x.thoughts.length-1].body:"";
+  let footer;
+  if(curated){ footer=`<button class="sm ghost" data-act="openLearnItem" data-id="${x.id}">✎ thoughts${nThoughts?` (${nThoughts})`:""}</button><button class="sm ghost" data-act="delLearn" data-id="${x.id}">✕</button>`; }
+  else { footer = x.saved ? `<span class="pill" style="color:var(--good,#3a9)">✓ saved</span>` : `<button class="sm primary" data-act="saveLearn" data-batch="${opts.batchId||""}" data-i="${opts.idx}">＋ Save to my list</button>`; }
   return `<div class="card" style="padding:12px">
     <div style="font-weight:600">${learnTypeIcon(x.type)} ${esc(x.title||"")}${x.creator?` <span class="faint sm">— ${esc(x.creator)}</span>`:""}</div>
     <div class="row sm" style="gap:6px;margin:5px 0;flex-wrap:wrap">
       ${x.type?`<span class="pill">${esc(x.type)}</span>`:""}
       ${x.lang?`<span class="pill">${esc(x.lang)}</span>`:""}
       ${x.impact?`<span class="pill">impact ${esc(String(x.impact))}/5</span>`:""}
-      ${saved&&x.status?`<span class="pill">${LEARN_STATUS[x.status]||esc(x.status)}</span>`:""}
+      ${curated&&x.status?`<span class="pill">${LEARN_STATUS[x.status]||esc(x.status)}</span>`:""}
     </div>
     ${x.relevance?`<div class="sm"><b>For you:</b> ${esc(x.relevance)}</div>`:""}
     ${x.takeaway?`<div class="sm" style="margin-top:3px"><b>Get:</b> ${esc(x.takeaway)}</div>`:""}
@@ -1116,28 +1126,39 @@ function learnCard(x,saved,idx){
     ${x.find?`<div class="sm faint" style="margin-top:5px">${esc(x.find)}</div>`:""}
     <div class="row sm" style="gap:6px;margin-top:6px;flex-wrap:wrap">${links}</div>
     ${x.angle?`<div class="sm" style="margin-top:6px;opacity:.9">🎬 ${esc(x.angle)}</div>`:""}
-    ${x.note?`<div class="sm" style="margin-top:5px;border-left:2px solid #2f7d5b;padding-left:8px">${esc(x.note)}</div>`:""}
-    <div class="btnrow" style="margin-top:9px">
-      ${saved
-        ? `<button class="sm ghost" data-act="editLearn" data-id="${x.id}">✎ status / reflection</button><button class="sm ghost" data-act="delLearn" data-id="${x.id}">✕</button>`
-        : `<button class="sm primary" data-act="saveLearn" data-i="${idx}">＋ Save to my list</button>`}
-    </div>
+    ${curated&&nThoughts?`<div class="sm" style="margin-top:5px;border-left:2px solid #2f7d5b;padding-left:8px">${esc(lastTh.slice(0,140))}${lastTh.length>140?"…":""}${nThoughts>1?` <span class="faint">+${nThoughts-1} more</span>`:""}</div>`:""}
+    <div class="btnrow" style="margin-top:9px">${footer}</div>
   </div>`;
 }
+function learnBatchChip(b){
+  const n=(b.items||[]).length, sv=(b.items||[]).filter(i=>i.saved).length;
+  return `<div class="card" data-act="openBatch" data-id="${b.id}" style="padding:10px;cursor:pointer">
+    <div class="row" style="justify-content:space-between;align-items:center"><span class="sm">✦ ${n} suggestion${n===1?"":"s"} · ${fmtDate(b.at)}</span><span class="faint sm">${sv?sv+" saved · ":""}open ›</span></div></div>`;
+}
 function viewLearn(){
-  S.learn=S.learn||[]; S.learnSuggested=S.learnSuggested||{at:0,items:[]};
+  S.learn=S.learn||[]; S.learnBatches=S.learnBatches||[];
   const canAI = !!(SYNC && SYNC.learn);
-  const sug = S.learnSuggested.items||[];
+  // batch detail page
+  if(UI.learnBatchId){
+    const b=S.learnBatches.find(x=>x.id===UI.learnBatchId);
+    if(b) return `
+      <div class="row" style="gap:8px;align-items:center;margin-bottom:8px"><button class="sm ghost" data-act="backLearn">‹ Back</button><span class="faint sm">Batch · ${fmtDate(b.at)} · ${b.items.length} suggestions</span></div>
+      ${b.items.map((x,i)=>learnCard(x,{batchId:b.id,idx:i})).join("")}
+      <div class="btnrow" style="margin-top:12px"><button class="ghost grow" data-act="delLearnBatch" data-id="${b.id}">🗑 Delete this batch</button></div>`;
+  }
+  const batches=S.learnBatches.slice().sort((a,b)=>(b.at||0)-(a.at||0));
+  const newest=batches[0]; const older=batches.slice(1);
   const saved = S.learn.slice().sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
   return `
   <div class="card">
     <div style="font-weight:600">✦ Learn — material for what you're actually working on</div>
-    <p class="faint sm" style="margin:6px 2px 10px">Reads your live threads &amp; recent thinking, then suggests high-leverage books / podcasts / videos tied to your real problems — each with an angle to turn it into your own content.</p>
-    <button class="primary" data-act="suggestLearn" ${canAI&&!learnBusy?"":"disabled"}>${learnBusy?"◌ thinking…":(sug.length?"↻ New suggestions":"✦ Suggest learning")}</button>
+    <p class="faint sm" style="margin:6px 2px 10px">Reads your live threads &amp; recent thinking, then suggests material tied to your real problems — each with an angle to turn it into your own content. Batches are kept so you can come back and pick later.</p>
+    <button class="primary" data-act="suggestLearn" ${canAI&&!learnBusy?"":"disabled"}>${learnBusy?"◌ thinking…":(batches.length?"↻ New suggestions":"✦ Suggest learning")}</button>
     ${canAI?"":`<p class="faint sm" style="margin-top:6px">Needs the Mini + API key.</p>`}
   </div>
-  ${sug.length?`<div class="row" style="justify-content:space-between;align-items:center;margin:14px 2px 6px"><span class="faint sm">Suggestions${S.learnSuggested.at?` · ${fmtDate(S.learnSuggested.at)}`:""} — save the keepers:</span><button class="sm ghost" data-act="clearLearnSug">clear</button></div>${sug.map((x,i)=>learnCard(x,false,i)).join("")}`:""}
-  ${saved.length?`<p class="faint sm" style="margin:16px 2px 6px">My learning list (${saved.length})</p>${saved.map(x=>learnCard(x,true)).join("")}`:(sug.length?"":`<div class="muted sm" style="margin-top:14px">No saved learning yet. Tap “Suggest learning”.</div>`)}
+  ${newest?`<p class="faint sm" style="margin:14px 2px 6px">Latest suggestions · ${fmtDate(newest.at)} — save the keepers:</p>${newest.items.map((x,i)=>learnCard(x,{batchId:newest.id,idx:i})).join("")}`:""}
+  ${older.length?`<p class="faint sm" style="margin:16px 2px 6px">Earlier batches (${older.length})</p>${older.map(learnBatchChip).join("")}`:""}
+  ${saved.length?`<p class="faint sm" style="margin:16px 2px 6px">My learning list (${saved.length})</p>${saved.map(x=>learnCard(x,{curated:true})).join("")}`:(newest?"":`<div class="muted sm" style="margin-top:14px">No saved learning yet. Tap “Suggest learning”.</div>`)}
   `;
 }
 function navigate(h){ if(location.hash===h) applyHash(); else location.hash=h; }
@@ -1149,7 +1170,7 @@ function applyHash(){
   else if(sec==="projects"){ UI.tab="projects"; }
   else if(sec==="project"){ if(parts[1] && project(parts[1])){ UI.tab="project"; UI.projectId=parts[1]; } else UI.tab="projects"; }
   else if(sec==="tasks"){ UI.tab="tasks"; taskTab = (parts[1]==="plans") ? "plans" : "todo"; }
-  else if(sec==="learn"){ UI.tab="learn"; }
+  else if(sec==="learn"){ UI.tab="learn"; UI.learnBatchId = (parts[1]==="b" && parts[2]) ? parts[2] : null; }
   else if(sec==="global"){ UI.tab="global"; }
   else { UI.tab="capture"; }
   window.scrollTo(0,0); render();
@@ -1195,33 +1216,43 @@ const ACT = {
       const r=await fetch(SYNC.learn,{method:"POST",headers:{Authorization:"Bearer "+SYNC.token,"Content-Type":"application/json"},body:"{}"});
       const j=await r.json();
       const arr = Array.isArray(j.suggestions)?j.suggestions:[];
-      if(arr.length){ S.learnSuggested={at:now(),items:arr}; save(); }
+      if(arr.length){ S.learnBatches.unshift({id:uid(),at:now(),items:arr}); if(S.learnBatches.length>20) S.learnBatches=S.learnBatches.slice(0,20); save(); }
       else toast(j.error?("⚠️ "+j.error):"No suggestions returned");
     }catch(e){ toast("⚠️ Suggest failed — is the Mini reachable?"); }
     learnBusy=false; render();
   },
   saveLearn(b){
-    S.learnSuggested=S.learnSuggested||{at:0,items:[]};
-    const x=S.learnSuggested.items[+b.dataset.i]; if(!x) return;
-    S.learn.push(Object.assign({},x,{id:uid(),savedAt:now(),status:"queued",note:""}));
-    S.learnSuggested.items.splice(+b.dataset.i,1);
-    save(); render(); toast("✦ saved to your list");
+    const batch=(S.learnBatches||[]).find(z=>z.id===b.dataset.batch); if(!batch) return;
+    const x=batch.items[+b.dataset.i]; if(!x||x.saved) return;
+    const copy=Object.assign({},x); delete copy.saved;
+    S.learn.push(Object.assign(copy,{id:uid(),savedAt:now(),status:"queued",thoughts:[]}));
+    x.saved=true; save(); render(); toast("✦ saved to your list");
   },
-  clearLearnSug(){ if(!confirm("Clear these suggestions? Your saved list stays.")) return; S.learnSuggested={at:0,items:[]}; save(); render(); },
-  editLearn(b){
-    const x=S.learn.find(i=>i.id===b.dataset.id); if(!x) return;
-    openSheet("Learning item",`
-      <div style="font-weight:600;margin-bottom:8px">${esc(x.title||"")}</div>
+  openBatch(b){ navigate("#/learn/b/"+b.dataset.id); },
+  backLearn(){ navigate("#/learn"); },
+  delLearnBatch(b){ if(!confirm("Delete this batch? Saved items stay in your list.")) return; S.learnBatches=(S.learnBatches||[]).filter(z=>z.id!==b.dataset.id); save(); navigate("#/learn"); },
+  openLearnItem(b){
+    const x=S.learn.find(i=>i.id===b.dataset.id); if(!x) return; x.thoughts=x.thoughts||[];
+    const ths=x.thoughts.slice().sort((a,c)=>(c.at||0)-(a.at||0)).map(t=>`<div class="card" style="padding:8px;margin-top:6px"><div class="sm">${esc(t.body)}</div><div class="row" style="justify-content:space-between;margin-top:4px"><span class="faint sm">${fmtDate(t.at)}</span><button class="sm ghost" data-act="delLearnThought" data-id="${x.id}" data-thid="${t.id}">✕</button></div></div>`).join("");
+    openSheet("✦ "+(x.title||"Learning"),`
+      <input type="hidden" id="elLId" value="${x.id}"/>
       <label class="fld">Status</label><select id="elStatus">${["queued","learning","done"].map(s=>`<option value="${s}" ${(x.status||"queued")===s?"selected":""}>${LEARN_STATUS[s]}</option>`).join("")}</select>
-      <label class="fld">My reflection / insight (what I'm taking from it — feeds your content)</label><textarea id="elNote" rows="4">${esc(x.note||"")}</textarea>
-      <input type="hidden" id="elId" value="${x.id}"/>
-      <div class="btnrow" style="margin-top:14px"><button class="primary grow" data-act="saveLearnItem">Save</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`);
+      <label class="fld">Add a thought / reflection</label><textarea id="elThought" rows="3" placeholder="Jot a thought and add it — come back anytime"></textarea>
+      <div class="btnrow" style="margin-top:8px"><button class="primary grow" data-act="addLearnThought" data-id="${x.id}">＋ Add thought</button></div>
+      ${ths?`<label class="fld" style="margin-top:12px">My thoughts (${x.thoughts.length})</label>${ths}`:`<p class="faint sm" style="margin-top:10px">No thoughts yet — jot one above.</p>`}
+      <div class="btnrow" style="margin-top:14px"><button class="grow" data-act="saveLearnItem">Done</button></div>`);
   },
-  saveLearnItem(){
-    const x=S.learn.find(i=>i.id===el("elId").value); if(!x) return;
-    x.status=el("elStatus").value; x.note=el("elNote").value.trim();
-    save(); closeSheet(); render(); toast("✓ saved");
+  addLearnThought(b){
+    const x=S.learn.find(i=>i.id===b.dataset.id); if(!x) return;
+    x.status=el("elStatus").value; const body=(el("elThought").value||"").trim();
+    if(body){ x.thoughts=x.thoughts||[]; x.thoughts.push({id:uid(),at:now(),body}); }
+    save(); ACT.openLearnItem(b); render(); if(body) toast("✓ thought added");
   },
+  delLearnThought(b){
+    const x=S.learn.find(i=>i.id===b.dataset.id); if(!x) return;
+    x.thoughts=(x.thoughts||[]).filter(t=>t.id!==b.dataset.thid); save(); ACT.openLearnItem(b); render();
+  },
+  saveLearnItem(){ const x=S.learn.find(i=>i.id===el("elLId").value); if(!x) return; x.status=el("elStatus").value; save(); closeSheet(); render(); },
   delLearn(b){ if(!confirm("Remove from your learning list?")) return; S.learn=S.learn.filter(i=>i.id!==b.dataset.id); save(); render(); },
   toggleTodoAll(){ todoShowAll=!todoShowAll; render(); },
   newThread(){ sheetNewThread(); },
