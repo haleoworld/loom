@@ -1088,19 +1088,33 @@ const ROUTE_FILTERS = ["active","sorted","parked","killed","all"];
 /* ---------- LEARN (Lucid) ---------- */
 let learnSuggestions=[]; let learnBusy=false;
 const LEARN_STATUS={queued:"📥 queued",learning:"📖 learning",done:"✅ done"};
-function learnTypeIcon(t){ return ({book:"📕",podcast:"🎙️",youtube:"▶️",article:"📄",talk:"🎤"})[t]||"✦"; }
+function learnTypeIcon(t){ return ({book:"📕",podcast:"🎙️",youtube:"▶️",article:"📄",blog:"📝",talk:"🎤"})[t]||"✦"; }
+function learnLinks(x){
+  const q=encodeURIComponent((((x.title||"")+" "+(x.creator||"")).trim())||"");
+  const t=x.type, L=[];
+  if(t==="book"){ L.push(["🛒 Amazon","https://www.amazon.ca/s?k="+q]); L.push(["📚 Library","https://search.worldcat.org/search?q="+q]); L.push(["📖 Books","https://www.google.com/search?tbm=bks&q="+q]); }
+  else if(t==="youtube"||t==="talk"){ L.push(["▶️ YouTube","https://www.youtube.com/results?search_query="+q]); }
+  else if(t==="podcast"){ L.push(["▶️ YouTube","https://www.youtube.com/results?search_query="+q]); L.push(["🎧 Spotify","https://open.spotify.com/search/"+q]); }
+  L.push(["🔍 Search","https://www.google.com/search?q="+q]);
+  return L;
+}
 function learnCard(x,saved,idx){
+  const tchips=(x.threadIds||[]).map(id=>{ const th=(S.threads||[]).find(t=>t.id===id); return th?`<a class="pill" href="#/thread/${id}" style="text-decoration:none">↳ ${esc((th.title||"").slice(0,42))}</a>`:""; }).filter(Boolean).join(" ");
+  const links=learnLinks(x).map(l=>`<a class="pill" href="${l[1]}" target="_blank" rel="noopener" style="text-decoration:none">${l[0]}</a>`).join("");
   return `<div class="card" style="padding:12px">
     <div style="font-weight:600">${learnTypeIcon(x.type)} ${esc(x.title||"")}${x.creator?` <span class="faint sm">— ${esc(x.creator)}</span>`:""}</div>
     <div class="row sm" style="gap:6px;margin:5px 0;flex-wrap:wrap">
       ${x.type?`<span class="pill">${esc(x.type)}</span>`:""}
+      ${x.lang?`<span class="pill">${esc(x.lang)}</span>`:""}
       ${x.impact?`<span class="pill">impact ${esc(String(x.impact))}/5</span>`:""}
       ${saved&&x.status?`<span class="pill">${LEARN_STATUS[x.status]||esc(x.status)}</span>`:""}
     </div>
     ${x.relevance?`<div class="sm"><b>For you:</b> ${esc(x.relevance)}</div>`:""}
     ${x.takeaway?`<div class="sm" style="margin-top:3px"><b>Get:</b> ${esc(x.takeaway)}</div>`:""}
-    ${x.find?`<div class="sm faint" style="margin-top:3px">🔍 ${esc(x.find)}</div>`:""}
-    ${x.angle?`<div class="sm" style="margin-top:4px;opacity:.9">🎬 ${esc(x.angle)}</div>`:""}
+    ${tchips?`<div class="row sm" style="gap:6px;margin-top:5px;flex-wrap:wrap">${tchips}</div>`:""}
+    ${x.find?`<div class="sm faint" style="margin-top:5px">${esc(x.find)}</div>`:""}
+    <div class="row sm" style="gap:6px;margin-top:6px;flex-wrap:wrap">${links}</div>
+    ${x.angle?`<div class="sm" style="margin-top:6px;opacity:.9">🎬 ${esc(x.angle)}</div>`:""}
     ${x.note?`<div class="sm" style="margin-top:5px;border-left:2px solid #2f7d5b;padding-left:8px">${esc(x.note)}</div>`:""}
     <div class="btnrow" style="margin-top:9px">
       ${saved

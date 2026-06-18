@@ -121,7 +121,7 @@ Reply in the language my entries are written in.`;
 function buildLearnPrompt(data, social) {
   const g = data.global || {};
   const goals = (g.goals || []).map((x, i) => `  ${i + 1}. ${x}`).join("\n") || "  (none)";
-  const active = (data.threads || []).filter(t => t.status === "active").sort((a, b) => b.lastActivityAt - a.lastActivityAt).slice(0, 20).map(t => `  - "${t.title}" [${domLabel(data, t.domain)}]`).join("\n") || "  (none)";
+  const active = (data.threads || []).filter(t => t.status === "active").sort((a, b) => b.lastActivityAt - a.lastActivityAt).slice(0, 20).map(t => `  - [${t.id}] "${t.title}" [${domLabel(data, t.domain)}]`).join("\n") || "  (none)";
   const frags = (data.fragments || []).slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 12).map(f => `  - ${String(f.body || "").replace(/\s+/g, " ").slice(0, 220)}`).join("\n") || "  (none)";
   const tasks = openTasksOrdered(data).slice(0, 15).map(t => `  - ${t.title}`).join("\n") || "  (none)";
   const refl = (data.reflections || []).slice().sort((a, b) => b.createdAt - a.createdAt)[0]; const reflTxt = refl ? String(refl.body).slice(0, 800) : "(none)";
@@ -141,12 +141,16 @@ ${reflTxt}
 ${social || "(small learning-out-loud channel; first principles; clearer thinking; a few good minds over an audience)"}
 
 ## RULES
-- Suggest ONLY real, well-known resources you are confident actually exist (specific books, established podcasts/shows, known YouTube channels, notable articles/talks). DO NOT fabricate URLs — give a "find" search hint instead.
+- LANGUAGE: give me a MIX of English AND Chinese-language resources — both Traditional (繁體) and Simplified (简体). Include creators from Chinese-speaking places (中國大陸 / 香港 / 台灣 / 馬來西亞 / etc.). I'm a bilingual Cantonese speaker — Chinese content is as valuable to me as English. Aim for roughly half Chinese, half English across the set.
+- MEDIA DIVERSITY: do NOT default to books. Give a real spread — at least 2 YouTube videos/channels and at least 1 blog/article, alongside podcasts/books/talks. Choose the medium that best fits each idea.
+- Suggest ONLY real, well-known resources you are confident actually exist (specific books, established podcasts/shows, known YouTube channels/videos, notable blogs/articles/talks). DO NOT fabricate URLs — the app builds reliable search links; just give a "find" search hint.
 - Rank by IMPACT TO ME given what's live above — not generic popularity. Each must connect to something specific I'm dealing with.
-- 6 suggestions, diverse in type and in which problem they serve.
+- For each suggestion set "threadIds" to the bracketed IDs from the ACTIVE THREADS list above that it maps to (so I can jump straight to that thinking). Use ONLY IDs from that list; omit if none truly fit.
+- Set "lang" to one of: "EN", "繁中", "简中".
+- 6-8 suggestions.
 
 ## OUTPUT — STRICT JSON ONLY, no prose, no markdown fences:
-{"suggestions":[{"title":"","creator":"","type":"book|podcast|youtube|article|talk","relevance":"which of MY threads/problems this speaks to, by name","takeaway":"the specific thing I'll get","impact":1-5,"find":"how to find it (search hint, not a URL)","angle":"how I could turn this + my own experience into a short TorGroFish video/post"}]}`;
+{"suggestions":[{"title":"","creator":"","type":"book|podcast|youtube|article|blog|talk","lang":"EN|繁中|简中","relevance":"which of MY threads/problems this speaks to, by name","takeaway":"the specific thing I'll get","impact":1-5,"find":"how to find it (search hint, not a URL)","angle":"how I could turn this + my own experience into a short TorGroFish video/post","threadIds":["id-from-list"]}]}`;
 }
 function runCoach(kind, cb) {
   let data; try { data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch (e) { return cb && cb(e); }
