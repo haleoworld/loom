@@ -1484,21 +1484,25 @@ async function push(silent){
 function showUpdateBanner(){
   if(document.getElementById("updBanner")) return;
   const b=document.createElement("div"); b.id="updBanner"; b.textContent="🔄 New version available — tap to reload";
-  b.style.cssText="position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:99999;background:#2f7d5b;color:#fff;padding:10px 18px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.35);cursor:pointer;font-size:14px;font-weight:600";
+  b.style.cssText="position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));z-index:99999;background:#2f7d5b;color:#fff;padding:11px 20px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.45);cursor:pointer;font-size:14px;font-weight:600";
   b.onclick=()=>location.reload(); document.body.appendChild(b);
 }
 function initSync(){
   if("serviceWorker" in navigator && (SYNC || location.protocol==="https:")){
     const swUrl = (SYNC && SYNC.sw) ? SYNC.sw : "sw.js";
     const opts = (SYNC && SYNC.scope) ? {scope:SYNC.scope} : undefined;
+    const swHad = !!navigator.serviceWorker.controller;   // was this page already controlled at load?
+    // most reliable signal with skipWaiting: a new worker takes control mid-session
+    navigator.serviceWorker.addEventListener("controllerchange",()=>{ if(swHad) showUpdateBanner(); });
     navigator.serviceWorker.register(swUrl, opts).then(reg=>{
       if(!reg) return;
-      if(reg.waiting && navigator.serviceWorker.controller) showUpdateBanner();   // an update is already staged
+      if(reg.waiting && swHad) showUpdateBanner();
       reg.addEventListener("updatefound",()=>{ const nw=reg.installing; if(!nw) return;
         nw.addEventListener("statechange",()=>{ if(nw.state==="installed" && navigator.serviceWorker.controller) showUpdateBanner(); }); });
-      // actively check for new versions while the app is open (browsers otherwise only check on load / ~daily)
+      // actively check for new versions while open (browsers otherwise check only on load / ~daily)
       const checkUpdate=()=>{ try{ reg.update(); }catch(e){} };
-      setInterval(checkUpdate, 5*60*1000);
+      checkUpdate();                          // check immediately on load
+      setInterval(checkUpdate, 60*1000);      // and every minute while open
       document.addEventListener("visibilitychange",()=>{ if(!document.hidden) checkUpdate(); });
     }).catch(()=>{});
   }
