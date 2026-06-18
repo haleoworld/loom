@@ -352,10 +352,31 @@ const COACH_STATE = path.join(DATA_DIR, "coach_state.json");
 function coachState() { try { return JSON.parse(fs.readFileSync(COACH_STATE, "utf8")); } catch (e) { return {}; } }
 function saveCoachState(s) { try { fs.writeFileSync(COACH_STATE, JSON.stringify(s)); } catch (e) {} }
 setInterval(() => {
-  if (!tgToken() || !tgChat() || !anthKey()) return;
+  if (!tgToken() || !tgChat()) return;
   const now = new Date(), h = now.getHours(), m = now.getMinutes(), today = now.toISOString().slice(0, 10), st = coachState();
-  // Automatic: WEEKLY only — the 3-bucket plan for the upcoming Sat-Fri week, pushed Friday 22:00 (after his Friday review, ready before the week starts Saturday).
-  if (now.getDay() === 5 && h === 22 && m < 5 && st.lastWeekly !== today) { st.lastWeekly = today; saveCoachState(st); runCoach("weekly", () => {}); }
+  // Automatic: WEEKLY only — the 3-bucket plan for the upcoming Sat-Fri week, pushed Friday 22:00 (after his Friday review, ready before the week starts Saturday). Needs the Anthropic key.
+  if (anthKey() && now.getDay() === 5 && h === 22 && m < 5 && st.lastWeekly !== today) { st.lastWeekly = today; saveCoachState(st); runCoach("weekly", () => {}); }
+  // Automatic: per-task TELEGRAM REMINDERS. task.reminders = [{ id, days:[0-6 Sun=0], time:"HH:MM" local, until: ts|null }]
+  try {
+    const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    const cur = h * 60 + m; st.remSent = st.remSent || {}; let changed = false;
+    for (const task of (data.tasks || [])) {
+      if (task.done || !Array.isArray(task.reminders)) continue;
+      for (const r of task.reminders) {
+        if (!r || !Array.isArray(r.days) || !r.days.includes(now.getDay())) continue;
+        if (r.until && now.getTime() > r.until) continue;
+        const p = String(r.time || "09:00").split(":"); const rmin = (+p[0]) * 60 + (+p[1] || 0);
+        if (cur < rmin) continue;                                   // not yet time today
+        const key = task.id + ":" + (r.id || r.time);
+        if (st.remSent[key] === today) continue;                    // already sent today
+        st.remSent[key] = today; changed = true;
+        const due = task.due ? " — due " + new Date(task.due).toISOString().slice(0, 10) : "";
+        tgSend("⏰ Reminder: " + task.title + due);
+      }
+    }
+    for (const k in st.remSent) { if (st.remSent[k] !== today) { delete st.remSent[k]; changed = true; } } // prune stale dedup keys
+    if (changed) saveCoachState(st);
+  } catch (e) {}
 }, 60000);
 
 // ---- Telegram command polling (one consumer of getUpdates) ----
