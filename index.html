@@ -802,6 +802,11 @@ function runningMin(t){ return t.runningSince ? Math.max(0,(now()-t.runningSince
 // effective priority: a task with escalateWithin (days) bumps UP to "high" once it's within that many days of its due date
 function effPriority(t){ let p=t.priority||null; if(t.escalateWithin && t.due && now() >= (t.due - t.escalateWithin*86400000)){ const rk={critical:0,high:1,med:2,low:3}; if((rk[p]??9) > rk.high) p="high"; } return p; }
 function isEscalated(t){ return (t.priority||null)!==effPriority(t); }
+// Telegram reminders: task.reminders = [{ id, days:[0-6 Sun=0], time:"HH:MM", until:ts|null }]. Server scheduler does the sending.
+const REM_PRESETS={ daily:{label:"Daily",days:[0,1,2,3,4,5,6]}, "2xweek":{label:"2×/week (Tue & Fri)",days:[2,5]}, weekend:{label:"Weekly (Sat)",days:[6]}, fridays:{label:"Fridays",days:[5]} };
+function remOf(t){ return (t.reminders&&t.reminders[0])||null; }
+function remPresetKey(r){ if(!r||!Array.isArray(r.days)) return ""; const d=[...r.days].sort((a,b)=>a-b).join(","); for(const k in REM_PRESETS){ if([...REM_PRESETS[k].days].sort((a,b)=>a-b).join(",")===d) return k; } return "custom"; }
+function remLabel(t){ const r=remOf(t); if(!r) return ""; const k=remPresetKey(r); const base=(k&&k!=="custom")?REM_PRESETS[k].label:(r.days.length+"×/wk"); return "🔔 "+base+" "+(r.time||"09:00")+(r.until?(" · till "+fmtDate(r.until)):""); }
 function viewTasks(){
   const pr={critical:0,high:1,med:2,low:3};
   const open=S.tasks.filter(t=>!t.done).sort((a,b)=>{ const pa=pr[effPriority(a)]??4, pb=pr[effPriority(b)]??4; if(pa!==pb) return pa-pb; return (a.due||8e15)-(b.due||8e15); });
@@ -813,6 +818,7 @@ function viewTasks(){
         ${dl?`<span class="pill" style="${dl.over?'color:var(--warn);border-color:#5a4a2a':''}">${dl.txt}</span>`:""}
         ${t.recurring?`<span class="pill">↻ ${t.recurring}</span>`:""}
         ${ep?`<span class="pill pri-${ep}">${ep==='critical'?'🔴 ':ep==='high'?'🟠 ':''}${ep}${isEscalated(t)?' ⏰':''}</span>`:""}
+        ${(t.reminders&&t.reminders.length&&!t.done)?`<span class="pill">${remLabel(t)}</span>`:""}
         ${t.runningSince?`<span class="pill" style="color:var(--bad);border-color:var(--bad)">● running ${fmtDur(runningMin(t))}</span>`:((t.sessions&&t.sessions.length)?`<span class="pill" data-act="taskLog" data-id="${t.id}" style="cursor:pointer">⏱ ${fmtDur(taskMinutes(t))} · ${t.sessions.length}×</span>`:"")}
       </div></div>
     <button class="sm ghost" data-act="taskLog" data-id="${t.id}">⏱</button>
@@ -1154,15 +1160,23 @@ const ACT = {
   delEntry(b){ if(!confirm("Delete this entry?")) return; if(b.dataset.kind==="plan") S.plans=S.plans.filter(x=>x.id!==b.dataset.id); else S.reflections=S.reflections.filter(x=>x.id!==b.dataset.id); save(); closeSheet(); render(); },
   addTask(){ const i=el("taskInput"); const v=i?i.value.trim():""; if(!v) return; S.tasks.push({id:uid(),title:v,done:false,createdAt:now(),due:null,recurring:null,priority:null,note:"",sessions:[],runningSince:null}); save(); render(); const j=el("taskInput"); if(j) j.focus(); },
   toggleTask(b){ const t=S.tasks.find(x=>x.id===b.dataset.id); if(!t) return; if(!t.done && t.recurring && t.due){ t.due=rollDue(t.due,t.recurring); toast("↻ rolled to next "+t.recurring); } else { t.done=!t.done; t.doneAt=t.done?now():null; } save(); render(); },
-  editTask(b){ const t=S.tasks.find(x=>x.id===b.dataset.id); if(!t) return; const dueVal=t.due?new Date(t.due).toISOString().slice(0,10):""; openSheet("Edit task",`
+  editTask(b){ const t=S.tasks.find(x=>x.id===b.dataset.id); if(!t) return; const dueVal=t.due?new Date(t.due).toISOString().slice(0,10):"";
+    const r0=remOf(t); const remKey=r0?remPresetKey(r0):""; const remTimeVal=r0?(r0.time||"09:00"):"09:00"; const remUntilVal=(r0&&r0.until)?new Date(r0.until).toISOString().slice(0,10):"";
+    let remOpts='<option value="">— none —</option>'; if(remKey==="custom") remOpts+='<option value="custom" selected>(custom — unchanged)</option>'; for(const k in REM_PRESETS){ remOpts+=`<option value="${k}" ${remKey===k?"selected":""}>${REM_PRESETS[k].label}</option>`; }
+    openSheet("Edit task",`
     <label class="fld">Task</label><input id="etTitle" value="${esc(t.title)}"/>
     <label class="fld">Due date</label><input id="etDue" type="date" value="${dueVal}"/>
     <label class="fld">Repeat</label><select id="etRepeat">${["","daily","weekly","monthly","yearly"].map(r=>`<option value="${r}" ${(t.recurring||"")===r?"selected":""}>${r||"— none —"}</option>`).join("")}</select>
     <label class="fld">Priority</label><select id="etPri">${["","critical","high","med","low"].map(p=>`<option value="${p}" ${(t.priority||"")===p?"selected":""}>${p||"— none —"}</option>`).join("")}</select>
+    <label class="fld">🔔 Telegram reminder</label><select id="etRemPreset">${remOpts}</select>
+    <div class="row" style="gap:8px;margin-top:6px"><div class="grow"><label class="fld sm">Time</label><input id="etRemTime" type="time" value="${remTimeVal}"/></div><div class="grow"><label class="fld sm">Until (optional)</label><input id="etRemUntil" type="date" value="${remUntilVal}"/></div></div>
     <label class="fld">Note (optional)</label><textarea id="etNote" rows="2">${esc(t.note||"")}</textarea>
     <input type="hidden" id="etId" value="${t.id}"/>
     <div class="btnrow" style="margin-top:14px"><button class="primary grow" data-act="saveTask">Save</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`); },
-  saveTask(){ const t=S.tasks.find(x=>x.id===el("etId").value); if(!t) return; const ti=el("etTitle").value.trim(); if(ti) t.title=ti; const dv=el("etDue").value; t.due=dv?new Date(dv+"T09:00").getTime():null; t.recurring=el("etRepeat").value||null; t.priority=el("etPri").value||null; t.note=el("etNote").value.trim(); save(); closeSheet(); render(); },
+  saveTask(){ const t=S.tasks.find(x=>x.id===el("etId").value); if(!t) return; const ti=el("etTitle").value.trim(); if(ti) t.title=ti; const dv=el("etDue").value; t.due=dv?new Date(dv+"T09:00").getTime():null; t.recurring=el("etRepeat").value||null; t.priority=el("etPri").value||null; t.note=el("etNote").value.trim();
+    const rp=el("etRemPreset").value; const rtime=el("etRemTime").value||"09:00"; const ru=el("etRemUntil").value; const until=ru?new Date(ru+"T23:59").getTime():null;
+    if(!rp){ delete t.reminders; } else if(rp==="custom"){ if(t.reminders&&t.reminders[0]){ t.reminders[0].time=rtime; t.reminders[0].until=until; } } else { const ex=t.reminders&&t.reminders[0]; t.reminders=[{ id:(ex&&ex.id)||uid(), days:REM_PRESETS[rp].days.slice(), time:rtime, until }]; }
+    save(); closeSheet(); render(); },
   delTask(b){ if(!confirm("Delete this task?")) return; S.tasks=S.tasks.filter(x=>x.id!==b.dataset.id); save(); render(); },
   taskLog(b){ logPrefill=null; logDraftNote=""; openTaskLog(b.dataset.id); },
   startTimer(b){ const t=S.tasks.find(x=>x.id===b.dataset.id); if(!t) return; const nt=el("sessNote"); if(nt) logDraftNote=nt.value; t.runningSince=now(); save(); render(); openTaskLog(t.id); toast("▶ timer started"); },
