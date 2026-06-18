@@ -1460,6 +1460,10 @@ function initSync(){
       if(reg.waiting && navigator.serviceWorker.controller) showUpdateBanner();   // an update is already staged
       reg.addEventListener("updatefound",()=>{ const nw=reg.installing; if(!nw) return;
         nw.addEventListener("statechange",()=>{ if(nw.state==="installed" && navigator.serviceWorker.controller) showUpdateBanner(); }); });
+      // actively check for new versions while the app is open (browsers otherwise only check on load / ~daily)
+      const checkUpdate=()=>{ try{ reg.update(); }catch(e){} };
+      setInterval(checkUpdate, 5*60*1000);
+      document.addEventListener("visibilitychange",()=>{ if(!document.hidden) checkUpdate(); });
     }).catch(()=>{});
   }
   if(!SYNC) return;
