@@ -1092,7 +1092,7 @@ function openListEdit(kind, i){
 /* ---- hash router: #/capture · #/threads[/filter] · #/thread/<id> · #/projects · #/project/<id> · #/global ---- */
 const ROUTE_FILTERS = ["active","sorted","parked","killed","all"];
 /* ---------- LEARN (Lucid) ---------- */
-let learnBusy=false;
+let learnBusy=false; let learnTab="suggest";
 const LEARN_STATUS={queued:"📥 queued",learning:"📖 learning",done:"✅ done"};
 function learnTypeIcon(t){ return ({book:"📕",podcast:"🎙️",youtube:"▶️",article:"📄",blog:"📝",talk:"🎤"})[t]||"✦"; }
 function learnLinks(x){
@@ -1149,7 +1149,14 @@ function viewLearn(){
   const batches=S.learnBatches.slice().sort((a,b)=>(b.at||0)-(a.at||0));
   const newest=batches[0]; const older=batches.slice(1);
   const saved = S.learn.slice().sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
-  return `
+  const seg=`<div class="seg" style="margin-bottom:12px">
+    <button class="${learnTab!=='list'?'on':''}" data-act="learnTab" data-v="suggest">Suggestions${batches.length?` (${batches.length})`:""}</button>
+    <button class="${learnTab==='list'?'on':''}" data-act="learnTab" data-v="list">My list${saved.length?` (${saved.length})`:""}</button>
+  </div>`;
+  if(learnTab==='list'){
+    return seg + (saved.length? saved.map(x=>learnCard(x,{curated:true})).join("") : `<div class="muted sm" style="margin-top:6px">No saved learning yet. Save the keepers from the Suggestions tab.</div>`);
+  }
+  return seg + `
   <div class="card">
     <div style="font-weight:600">✦ Learn — material for what you're actually working on</div>
     <p class="faint sm" style="margin:6px 2px 10px">Reads your live threads &amp; recent thinking, then suggests material tied to your real problems — each with an angle to turn it into your own content. Batches are kept so you can come back and pick later.</p>
@@ -1158,7 +1165,7 @@ function viewLearn(){
   </div>
   ${newest?`<p class="faint sm" style="margin:14px 2px 6px">Latest suggestions · ${fmtDate(newest.at)} — save the keepers:</p>${newest.items.map((x,i)=>learnCard(x,{batchId:newest.id,idx:i})).join("")}`:""}
   ${older.length?`<p class="faint sm" style="margin:16px 2px 6px">Earlier batches (${older.length})</p>${older.map(learnBatchChip).join("")}`:""}
-  ${saved.length?`<p class="faint sm" style="margin:16px 2px 6px">My learning list (${saved.length})</p>${saved.map(x=>learnCard(x,{curated:true})).join("")}`:(newest?"":`<div class="muted sm" style="margin-top:14px">No saved learning yet. Tap “Suggest learning”.</div>`)}
+  ${(!newest)?`<div class="muted sm" style="margin-top:14px">No suggestions yet. Tap “Suggest learning”.</div>`:""}
   `;
 }
 function navigate(h){ if(location.hash===h) applyHash(); else location.hash=h; }
@@ -1170,7 +1177,7 @@ function applyHash(){
   else if(sec==="projects"){ UI.tab="projects"; }
   else if(sec==="project"){ if(parts[1] && project(parts[1])){ UI.tab="project"; UI.projectId=parts[1]; } else UI.tab="projects"; }
   else if(sec==="tasks"){ UI.tab="tasks"; taskTab = (parts[1]==="plans") ? "plans" : "todo"; }
-  else if(sec==="learn"){ UI.tab="learn"; UI.learnBatchId = (parts[1]==="b" && parts[2]) ? parts[2] : null; }
+  else if(sec==="learn"){ UI.tab="learn"; UI.learnBatchId = (parts[1]==="b" && parts[2]) ? parts[2] : null; if(parts[1]==="list") learnTab="list"; else if(parts[1]==="suggest"||!parts[1]) learnTab="suggest"; }
   else if(sec==="global"){ UI.tab="global"; }
   else { UI.tab="capture"; }
   window.scrollTo(0,0); render();
@@ -1228,6 +1235,7 @@ const ACT = {
     S.learn.push(Object.assign(copy,{id:uid(),savedAt:now(),status:"queued",thoughts:[]}));
     x.saved=true; save(); render(); toast("✦ saved to your list");
   },
+  learnTab(b){ navigate("#/learn/"+b.dataset.v); },
   openBatch(b){ navigate("#/learn/b/"+b.dataset.id); },
   backLearn(){ navigate("#/learn"); },
   delLearnBatch(b){ if(!confirm("Delete this batch? Saved items stay in your list.")) return; S.learnBatches=(S.learnBatches||[]).filter(z=>z.id!==b.dataset.id); save(); navigate("#/learn"); },
