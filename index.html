@@ -176,7 +176,7 @@ function load(){
     const raw = localStorage.getItem(KEY);
     if(raw) return migrate(JSON.parse(raw));
   }catch(e){ console.warn("load failed",e); }
-  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], tasks:[], reflections:[], plans:[], domains:DEFAULT_DOMAINS.map(d=>[d[0],d[1]]), fragTypes:DEFAULT_FRAG_TYPES.slice(), meta:{lastBackup:0,updatedAt:0} };
+  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], tasks:[], reflections:[], plans:[], learn:[], domains:DEFAULT_DOMAINS.map(d=>[d[0],d[1]]), fragTypes:DEFAULT_FRAG_TYPES.slice(), meta:{lastBackup:0,updatedAt:0} };
 }
 function migrate(s){
   s.global = s.global || {models:[],goals:[]};
@@ -187,6 +187,7 @@ function migrate(s){
   s.tasks = s.tasks || [];
   s.reflections = s.reflections || [];
   s.plans = s.plans || [];
+  s.learn = s.learn || [];
   s.meta = s.meta||{lastBackup:0,updatedAt:0};
   if(s.meta.updatedAt==null) s.meta.updatedAt=0;
   return s;
@@ -569,11 +570,12 @@ const NAV = [
   ["threads","≡","Threads"],
   ["tasks","✓","Tasks"],
   ["projects","◳","Projects"],
+  ["learn","✦","Learn"],
   ["global","◎","Global"],
 ];
 function render(){
   // header
-  const titles = {capture:"Capture",threads:"Threads",tasks:"Tasks",projects:"Projects",global:"Global frame",thread:"Thread",project:"Project"};
+  const titles = {capture:"Capture",threads:"Threads",tasks:"Tasks",projects:"Projects",learn:"Learn",global:"Global frame",thread:"Thread",project:"Project"};
   el("hTitle").textContent = titles[UI.tab]||"Thread";
   const n = activeThreads().length;
   el("hSub").innerHTML = `${n} active thread${n===1?"":"s"}` + backupNudge() + syncLabel();
@@ -583,6 +585,7 @@ function render(){
   else if(UI.tab==="threads") html=viewThreads();
   else if(UI.tab==="projects"||UI.tab==="project") html=viewProjects();
   else if(UI.tab==="tasks") html=viewTasks();
+  else if(UI.tab==="learn") html=viewLearn();
   else if(UI.tab==="global") html=viewGlobal();
   else if(UI.tab==="thread") html=viewThread();
   el("main").innerHTML = html;
@@ -1082,6 +1085,45 @@ function openListEdit(kind, i){
    ============================================================ */
 /* ---- hash router: #/capture · #/threads[/filter] · #/thread/<id> · #/projects · #/project/<id> · #/global ---- */
 const ROUTE_FILTERS = ["active","sorted","parked","killed","all"];
+/* ---------- LEARN (Lucid) ---------- */
+let learnSuggestions=[]; let learnBusy=false;
+const LEARN_STATUS={queued:"📥 queued",learning:"📖 learning",done:"✅ done"};
+function learnTypeIcon(t){ return ({book:"📕",podcast:"🎙️",youtube:"▶️",article:"📄",talk:"🎤"})[t]||"✦"; }
+function learnCard(x,saved,idx){
+  return `<div class="card" style="padding:12px">
+    <div style="font-weight:600">${learnTypeIcon(x.type)} ${esc(x.title||"")}${x.creator?` <span class="faint sm">— ${esc(x.creator)}</span>`:""}</div>
+    <div class="row sm" style="gap:6px;margin:5px 0;flex-wrap:wrap">
+      ${x.type?`<span class="pill">${esc(x.type)}</span>`:""}
+      ${x.impact?`<span class="pill">impact ${esc(String(x.impact))}/5</span>`:""}
+      ${saved&&x.status?`<span class="pill">${LEARN_STATUS[x.status]||esc(x.status)}</span>`:""}
+    </div>
+    ${x.relevance?`<div class="sm"><b>For you:</b> ${esc(x.relevance)}</div>`:""}
+    ${x.takeaway?`<div class="sm" style="margin-top:3px"><b>Get:</b> ${esc(x.takeaway)}</div>`:""}
+    ${x.find?`<div class="sm faint" style="margin-top:3px">🔍 ${esc(x.find)}</div>`:""}
+    ${x.angle?`<div class="sm" style="margin-top:4px;opacity:.9">🎬 ${esc(x.angle)}</div>`:""}
+    ${x.note?`<div class="sm" style="margin-top:5px;border-left:2px solid #2f7d5b;padding-left:8px">${esc(x.note)}</div>`:""}
+    <div class="btnrow" style="margin-top:9px">
+      ${saved
+        ? `<button class="sm ghost" data-act="editLearn" data-id="${x.id}">✎ status / reflection</button><button class="sm ghost" data-act="delLearn" data-id="${x.id}">✕</button>`
+        : `<button class="sm primary" data-act="saveLearn" data-i="${idx}">＋ Save to my list</button>`}
+    </div>
+  </div>`;
+}
+function viewLearn(){
+  S.learn=S.learn||[];
+  const canAI = !!(SYNC && SYNC.learn);
+  const saved = S.learn.slice().sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
+  return `
+  <div class="card">
+    <div style="font-weight:600">✦ Learn — material for what you're actually working on</div>
+    <p class="faint sm" style="margin:6px 2px 10px">Reads your live threads &amp; recent thinking, then suggests high-leverage books / podcasts / videos tied to your real problems — each with an angle to turn it into your own content.</p>
+    <button class="primary" data-act="suggestLearn" ${canAI&&!learnBusy?"":"disabled"}>${learnBusy?"◌ thinking…":"✦ Suggest learning"}</button>
+    ${canAI?"":`<p class="faint sm" style="margin-top:6px">Needs the Mini + API key.</p>`}
+  </div>
+  ${learnSuggestions.length?`<p class="faint sm" style="margin:14px 2px 6px">Fresh suggestions — save the ones worth your time:</p>${learnSuggestions.map((x,i)=>learnCard(x,false,i)).join("")}`:""}
+  ${saved.length?`<p class="faint sm" style="margin:16px 2px 6px">My learning list (${saved.length})</p>${saved.map(x=>learnCard(x,true)).join("")}`:(learnSuggestions.length?"":`<div class="muted sm" style="margin-top:14px">No saved learning yet. Tap “Suggest learning”.</div>`)}
+  `;
+}
 function navigate(h){ if(location.hash===h) applyHash(); else location.hash=h; }
 function applyHash(){
   const parts = (location.hash||"").replace(/^#\/?/,"").split("/").filter(Boolean);
@@ -1091,6 +1133,7 @@ function applyHash(){
   else if(sec==="projects"){ UI.tab="projects"; }
   else if(sec==="project"){ if(parts[1] && project(parts[1])){ UI.tab="project"; UI.projectId=parts[1]; } else UI.tab="projects"; }
   else if(sec==="tasks"){ UI.tab="tasks"; taskTab = (parts[1]==="plans") ? "plans" : "todo"; }
+  else if(sec==="learn"){ UI.tab="learn"; }
   else if(sec==="global"){ UI.tab="global"; }
   else { UI.tab="capture"; }
   window.scrollTo(0,0); render();
@@ -1129,6 +1172,38 @@ const ACT = {
   saveFragment,
   threadFilter(b){ navigate("#/threads/"+b.dataset.v); },
   taskTab(b){ todoShowAll=false; navigate("#/tasks/"+b.dataset.v); },
+  async suggestLearn(){
+    if(!(SYNC&&SYNC.learn)||learnBusy) return;
+    learnBusy=true; render();
+    try{
+      const r=await fetch(SYNC.learn,{method:"POST",headers:{Authorization:"Bearer "+SYNC.token,"Content-Type":"application/json"},body:"{}"});
+      const j=await r.json();
+      learnSuggestions = Array.isArray(j.suggestions)?j.suggestions:[];
+      if(!learnSuggestions.length) toast(j.error?("⚠️ "+j.error):"No suggestions returned");
+    }catch(e){ toast("⚠️ Suggest failed — is the Mini reachable?"); }
+    learnBusy=false; render();
+  },
+  saveLearn(b){
+    const x=learnSuggestions[+b.dataset.i]; if(!x) return;
+    S.learn.push(Object.assign({},x,{id:uid(),savedAt:now(),status:"queued",note:""}));
+    learnSuggestions.splice(+b.dataset.i,1);
+    save(); render(); toast("✦ saved to your list");
+  },
+  editLearn(b){
+    const x=S.learn.find(i=>i.id===b.dataset.id); if(!x) return;
+    openSheet("Learning item",`
+      <div style="font-weight:600;margin-bottom:8px">${esc(x.title||"")}</div>
+      <label class="fld">Status</label><select id="elStatus">${["queued","learning","done"].map(s=>`<option value="${s}" ${(x.status||"queued")===s?"selected":""}>${LEARN_STATUS[s]}</option>`).join("")}</select>
+      <label class="fld">My reflection / insight (what I'm taking from it — feeds your content)</label><textarea id="elNote" rows="4">${esc(x.note||"")}</textarea>
+      <input type="hidden" id="elId" value="${x.id}"/>
+      <div class="btnrow" style="margin-top:14px"><button class="primary grow" data-act="saveLearnItem">Save</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`);
+  },
+  saveLearnItem(){
+    const x=S.learn.find(i=>i.id===el("elId").value); if(!x) return;
+    x.status=el("elStatus").value; x.note=el("elNote").value.trim();
+    save(); closeSheet(); render(); toast("✓ saved");
+  },
+  delLearn(b){ if(!confirm("Remove from your learning list?")) return; S.learn=S.learn.filter(i=>i.id!==b.dataset.id); save(); render(); },
   toggleTodoAll(){ todoShowAll=!todoShowAll; render(); },
   newThread(){ sheetNewThread(); },
   newLifeThread(){ openSheet("New thread about my life",`<label class="fld">What's on your mind about your life right now?</label><input id="ntTitle" placeholder="e.g. Why do I always feel out of time and energy?"/><div class="btnrow" style="margin-top:16px"><button class="primary grow" data-act="createLifeThread">Create</button><button class="ghost" data-act="closeSheet">Cancel</button></div>`); },
