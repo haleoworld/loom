@@ -118,6 +118,36 @@ Reply in the language my entries are written in.` : `## GIVE ME — a short TODA
 3. ON-TRACK & COHERENCE — one sharp coaching line.`}
 Reply in the language my entries are written in.`;
 }
+function buildLearnPrompt(data, social) {
+  const g = data.global || {};
+  const goals = (g.goals || []).map((x, i) => `  ${i + 1}. ${x}`).join("\n") || "  (none)";
+  const active = (data.threads || []).filter(t => t.status === "active").sort((a, b) => b.lastActivityAt - a.lastActivityAt).slice(0, 20).map(t => `  - "${t.title}" [${domLabel(data, t.domain)}]`).join("\n") || "  (none)";
+  const frags = (data.fragments || []).slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 12).map(f => `  - ${String(f.body || "").replace(/\s+/g, " ").slice(0, 220)}`).join("\n") || "  (none)";
+  const tasks = openTasksOrdered(data).slice(0, 15).map(t => `  - ${t.title}`).join("\n") || "  (none)";
+  const refl = (data.reflections || []).slice().sort((a, b) => b.createdAt - a.createdAt)[0]; const reflTxt = refl ? String(refl.body).slice(0, 800) : "(none)";
+  return `You are my learning scout. From the REAL problems I'm wrestling with right now, suggest high-leverage learning material I should consume — then how I could turn what I learn into my own content (I run a small learning-out-loud channel; see my identity doc).
+
+## MY LIFE GOALS
+${goals}
+## WHAT I'M ACTIVELY WRESTLING WITH (threads)
+${active}
+## MY RECENT RAW THINKING (fragments — weigh heavily, this is what's live for me)
+${frags}
+## OPEN TASKS
+${tasks}
+## MY LATEST REFLECTION
+${reflTxt}
+## MY CONTENT IDENTITY (for the 'angle' field)
+${social || "(small learning-out-loud channel; first principles; clearer thinking; a few good minds over an audience)"}
+
+## RULES
+- Suggest ONLY real, well-known resources you are confident actually exist (specific books, established podcasts/shows, known YouTube channels, notable articles/talks). DO NOT fabricate URLs — give a "find" search hint instead.
+- Rank by IMPACT TO ME given what's live above — not generic popularity. Each must connect to something specific I'm dealing with.
+- 6 suggestions, diverse in type and in which problem they serve.
+
+## OUTPUT — STRICT JSON ONLY, no prose, no markdown fences:
+{"suggestions":[{"title":"","creator":"","type":"book|podcast|youtube|article|talk","relevance":"which of MY threads/problems this speaks to, by name","takeaway":"the specific thing I'll get","impact":1-5,"find":"how to find it (search hint, not a URL)","angle":"how I could turn this + my own experience into a short TorGroFish video/post"}]}`;
+}
 function runCoach(kind, cb) {
   let data; try { data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch (e) { return cb && cb(e); }
   const prompt = buildPlanPrompt(data, kind) + (kind === "weekly" ? "\n\n(WEEKLY plan — be reflective; check this week against last week's plan, then give EXACTLY the three things: main focus, secondary focus, one chore. Keep it tight.)" : "\n\n(quick check-in — keep it short and focused on TODAY.)");
@@ -239,6 +269,20 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ---- Lucid: personalized learning suggestions from my real threads/fragments ----
+  if (urlPath === "/learn" && req.method === "POST") {
+    if (!authed(req)) return send(res, 401, "unauthorized");
+    const data = readData();
+    if (!data) return send(res, 500, JSON.stringify({ error: "no data on the Mini" }), TYPES[".json"]);
+    let social = ""; try { social = fs.readFileSync(path.join(APP_DIR, "SOCIAL_IDENTITY.md"), "utf8").slice(0, 2000); } catch (e) {}
+    callAnthropic(buildLearnPrompt(data, social), 3500, (err, text) => {
+      if (err) { console.error("[loom] learn failed:", err.message); return send(res, 502, JSON.stringify({ error: err.message }), TYPES[".json"]); }
+      let out; try { out = JSON.parse(String(text).replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim()); } catch (e) { out = { error: "parse", raw: text }; }
+      send(res, 200, JSON.stringify(out), TYPES[".json"]);
+    });
+    return;
+  }
+
   // ---- on-demand coach run (also used by the scheduler) ----
   if (urlPath === "/coach/run" && req.method === "POST") {
     if (!authed(req)) return send(res, 401, "unauthorized");
@@ -333,7 +377,7 @@ const server = http.createServer((req, res) => {
     const ext = path.extname(full).toLowerCase();
     if (ext === ".html") {
       // inject sync config so the app on the tailnet just works, no token typing
-      const cfg = `<script>window.LOOM_SYNC=${JSON.stringify({ token: TOKEN, url: BASE + "/data", sw: BASE + "/sw.js", scope: BASE + "/", transcribe: BASE + "/transcribe", audio: BASE + "/audio", summarize: BASE + "/summarize", plan: anthKey() ? BASE + "/plan" : null })};</script>`;
+      const cfg = `<script>window.LOOM_SYNC=${JSON.stringify({ token: TOKEN, url: BASE + "/data", sw: BASE + "/sw.js", scope: BASE + "/", transcribe: BASE + "/transcribe", audio: BASE + "/audio", summarize: BASE + "/summarize", plan: anthKey() ? BASE + "/plan" : null, learn: anthKey() ? BASE + "/learn" : null })};</script>`;
       const html = buf.toString("utf8").replace("<!--LOOM_CONFIG-->", cfg);
       res.setHeader("Cache-Control", "no-cache");
       return send(res, 200, html, TYPES[".html"]);
