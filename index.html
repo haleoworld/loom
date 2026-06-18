@@ -176,7 +176,7 @@ function load(){
     const raw = localStorage.getItem(KEY);
     if(raw) return migrate(JSON.parse(raw));
   }catch(e){ console.warn("load failed",e); }
-  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], tasks:[], reflections:[], plans:[], learn:[], domains:DEFAULT_DOMAINS.map(d=>[d[0],d[1]]), fragTypes:DEFAULT_FRAG_TYPES.slice(), meta:{lastBackup:0,updatedAt:0} };
+  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], tasks:[], reflections:[], plans:[], learn:[], learnSuggested:{at:0,items:[]}, domains:DEFAULT_DOMAINS.map(d=>[d[0],d[1]]), fragTypes:DEFAULT_FRAG_TYPES.slice(), meta:{lastBackup:0,updatedAt:0} };
 }
 function migrate(s){
   s.global = s.global || {models:[],goals:[]};
@@ -188,6 +188,7 @@ function migrate(s){
   s.reflections = s.reflections || [];
   s.plans = s.plans || [];
   s.learn = s.learn || [];
+  s.learnSuggested = s.learnSuggested || {at:0,items:[]};
   s.meta = s.meta||{lastBackup:0,updatedAt:0};
   if(s.meta.updatedAt==null) s.meta.updatedAt=0;
   return s;
@@ -1086,7 +1087,7 @@ function openListEdit(kind, i){
 /* ---- hash router: #/capture · #/threads[/filter] · #/thread/<id> · #/projects · #/project/<id> · #/global ---- */
 const ROUTE_FILTERS = ["active","sorted","parked","killed","all"];
 /* ---------- LEARN (Lucid) ---------- */
-let learnSuggestions=[]; let learnBusy=false;
+let learnBusy=false;
 const LEARN_STATUS={queued:"📥 queued",learning:"📖 learning",done:"✅ done"};
 function learnTypeIcon(t){ return ({book:"📕",podcast:"🎙️",youtube:"▶️",article:"📄",blog:"📝",talk:"🎤"})[t]||"✦"; }
 function learnLinks(x){
@@ -1124,18 +1125,19 @@ function learnCard(x,saved,idx){
   </div>`;
 }
 function viewLearn(){
-  S.learn=S.learn||[];
+  S.learn=S.learn||[]; S.learnSuggested=S.learnSuggested||{at:0,items:[]};
   const canAI = !!(SYNC && SYNC.learn);
+  const sug = S.learnSuggested.items||[];
   const saved = S.learn.slice().sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
   return `
   <div class="card">
     <div style="font-weight:600">✦ Learn — material for what you're actually working on</div>
     <p class="faint sm" style="margin:6px 2px 10px">Reads your live threads &amp; recent thinking, then suggests high-leverage books / podcasts / videos tied to your real problems — each with an angle to turn it into your own content.</p>
-    <button class="primary" data-act="suggestLearn" ${canAI&&!learnBusy?"":"disabled"}>${learnBusy?"◌ thinking…":"✦ Suggest learning"}</button>
+    <button class="primary" data-act="suggestLearn" ${canAI&&!learnBusy?"":"disabled"}>${learnBusy?"◌ thinking…":(sug.length?"↻ New suggestions":"✦ Suggest learning")}</button>
     ${canAI?"":`<p class="faint sm" style="margin-top:6px">Needs the Mini + API key.</p>`}
   </div>
-  ${learnSuggestions.length?`<p class="faint sm" style="margin:14px 2px 6px">Fresh suggestions — save the ones worth your time:</p>${learnSuggestions.map((x,i)=>learnCard(x,false,i)).join("")}`:""}
-  ${saved.length?`<p class="faint sm" style="margin:16px 2px 6px">My learning list (${saved.length})</p>${saved.map(x=>learnCard(x,true)).join("")}`:(learnSuggestions.length?"":`<div class="muted sm" style="margin-top:14px">No saved learning yet. Tap “Suggest learning”.</div>`)}
+  ${sug.length?`<div class="row" style="justify-content:space-between;align-items:center;margin:14px 2px 6px"><span class="faint sm">Suggestions${S.learnSuggested.at?` · ${fmtDate(S.learnSuggested.at)}`:""} — save the keepers:</span><button class="sm ghost" data-act="clearLearnSug">clear</button></div>${sug.map((x,i)=>learnCard(x,false,i)).join("")}`:""}
+  ${saved.length?`<p class="faint sm" style="margin:16px 2px 6px">My learning list (${saved.length})</p>${saved.map(x=>learnCard(x,true)).join("")}`:(sug.length?"":`<div class="muted sm" style="margin-top:14px">No saved learning yet. Tap “Suggest learning”.</div>`)}
   `;
 }
 function navigate(h){ if(location.hash===h) applyHash(); else location.hash=h; }
@@ -1192,17 +1194,20 @@ const ACT = {
     try{
       const r=await fetch(SYNC.learn,{method:"POST",headers:{Authorization:"Bearer "+SYNC.token,"Content-Type":"application/json"},body:"{}"});
       const j=await r.json();
-      learnSuggestions = Array.isArray(j.suggestions)?j.suggestions:[];
-      if(!learnSuggestions.length) toast(j.error?("⚠️ "+j.error):"No suggestions returned");
+      const arr = Array.isArray(j.suggestions)?j.suggestions:[];
+      if(arr.length){ S.learnSuggested={at:now(),items:arr}; save(); }
+      else toast(j.error?("⚠️ "+j.error):"No suggestions returned");
     }catch(e){ toast("⚠️ Suggest failed — is the Mini reachable?"); }
     learnBusy=false; render();
   },
   saveLearn(b){
-    const x=learnSuggestions[+b.dataset.i]; if(!x) return;
+    S.learnSuggested=S.learnSuggested||{at:0,items:[]};
+    const x=S.learnSuggested.items[+b.dataset.i]; if(!x) return;
     S.learn.push(Object.assign({},x,{id:uid(),savedAt:now(),status:"queued",note:""}));
-    learnSuggestions.splice(+b.dataset.i,1);
+    S.learnSuggested.items.splice(+b.dataset.i,1);
     save(); render(); toast("✦ saved to your list");
   },
+  clearLearnSug(){ if(!confirm("Clear these suggestions? Your saved list stays.")) return; S.learnSuggested={at:0,items:[]}; save(); render(); },
   editLearn(b){
     const x=S.learn.find(i=>i.id===b.dataset.id); if(!x) return;
     openSheet("Learning item",`
