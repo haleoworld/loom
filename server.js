@@ -460,8 +460,8 @@ function saveCoachState(s) { try { fs.writeFileSync(COACH_STATE, JSON.stringify(
 setInterval(() => {
   if (!tgToken() || !tgChat()) return;
   const now = new Date(), h = now.getHours(), m = now.getMinutes(), today = now.toISOString().slice(0, 10), st = coachState();
-  // Automatic: WEEKLY only — the 3-bucket plan for the upcoming Sat-Fri week, pushed Friday 22:00 (after his Friday review, ready before the week starts Saturday). Needs the Anthropic key.
-  if (anthKey() && now.getDay() === 5 && h === 22 && m < 5 && st.lastWeekly !== today) { st.lastWeekly = today; saveCoachState(st); runCoach("weekly", () => {}); }
+  // Automatic: WEEKLY only — the 3-bucket plan for the upcoming Sat-Fri week, pushed Friday 10:00 so he has the day to review & adjust before the week starts Saturday. Needs the Anthropic key.
+  if (anthKey() && now.getDay() === 5 && h === 10 && m < 5 && st.lastWeekly !== today) { st.lastWeekly = today; saveCoachState(st); runCoach("weekly", () => {}); }
   // Automatic: per-task TELEGRAM REMINDERS. task.reminders = [{ id, days:[0-6 Sun=0], time:"HH:MM" local, until: ts|null }]
   try {
     const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
