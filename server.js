@@ -124,6 +124,8 @@ function buildBlockersPrompt(data) {
   const active = (data.threads || []).filter(t => t.status === "active").sort((a, b) => b.lastActivityAt - a.lastActivityAt).slice(0, 24).map(t => `  - [${t.id}] "${t.title}" [${domLabel(data, t.domain)}]`).join("\n") || "  (none)";
   const frags = (data.fragments || []).slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 18).map(f => `  - [${f.id}] ${String(f.body || "").replace(/\s+/g, " ").slice(0, 200)}`).join("\n") || "  (none)";
   const tasks = openTasksOrdered(data).slice(0, 15).map(t => `  - ${t.title}`).join("\n") || "  (none)";
+  const prevRuns = (data.blockerRuns || []).slice(0, 5);
+  const prev = prevRuns.length ? prevRuns.map(r => `  [${new Date(r.at).toISOString().slice(0, 10)}] ${(r.items || []).map(b => b.title).join(" · ")}`).join("\n") : "  (none yet)";
   return `You are my executive coach. Look across my whole system and name my BIGGEST blockers — the highest-impact, high-ROI areas worth my time to LEARN about and REFLECT on. Don't give a flat list of ten; find the few ROOTS that generate most of the downstream problems. Be honest, like a coach, not a cheerleader.
 
 ## MY LIFE GOALS
@@ -134,10 +136,13 @@ ${active}
 ${frags}
 ## OPEN TASKS
 ${tasks}
+## MY PAST BLOCKER ANALYSES (most recent first) — BUILD ON THESE, don't just repeat them:
+${prev}
 
 ## RULES
 - 4-5 blockers max, ranked by leverage/ROI (highest first).
 - Prefer ROOT causes over symptoms; if several threads share one root, name the root.
+- Weigh my PAST analyses: a blocker that keeps RECURRING and is still unresolved deserves higher urgency (say so); surface anything genuinely NEW since last time; and if something looks resolved or improving, don't just re-list it. Evolve the analysis — don't regurgitate the same list identically.
 - For each, set "threadIds" and "fragmentIds" to the bracketed IDs above that evidence it (use ONLY IDs from the lists; omit if none truly fit).
 - "why" = an honest 2-3 sentence case for why this is high-impact and worth learning about NOW.
 

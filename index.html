@@ -176,7 +176,7 @@ function load(){
     const raw = localStorage.getItem(KEY);
     if(raw) return migrate(JSON.parse(raw));
   }catch(e){ console.warn("load failed",e); }
-  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], tasks:[], reflections:[], plans:[], learn:[], learnBatches:[], learnBlockers:{at:0,items:[]}, domains:DEFAULT_DOMAINS.map(d=>[d[0],d[1]]), fragTypes:DEFAULT_FRAG_TYPES.slice(), meta:{lastBackup:0,updatedAt:0} };
+  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], tasks:[], reflections:[], plans:[], learn:[], learnBatches:[], blockerRuns:[], domains:DEFAULT_DOMAINS.map(d=>[d[0],d[1]]), fragTypes:DEFAULT_FRAG_TYPES.slice(), meta:{lastBackup:0,updatedAt:0} };
 }
 function migrate(s){
   s.global = s.global || {models:[],goals:[]};
@@ -189,7 +189,11 @@ function migrate(s){
   s.plans = s.plans || [];
   s.learn = s.learn || [];
   s.learnBatches = s.learnBatches || [];
-  s.learnBlockers = s.learnBlockers || {at:0,items:[]};
+  s.blockerRuns = s.blockerRuns || [];
+  if(s.learnBlockers && Array.isArray(s.learnBlockers.items) && s.learnBlockers.items.length && !s.blockerRuns.length){
+    s.blockerRuns = [{id:Math.random().toString(36).slice(2,9), at:s.learnBlockers.at||0, items:s.learnBlockers.items}];
+  }
+  delete s.learnBlockers;
   if(s.learnSuggested && Array.isArray(s.learnSuggested.items) && s.learnSuggested.items.length && !s.learnBatches.length){
     s.learnBatches = [{id:Math.random().toString(36).slice(2,9), at:s.learnSuggested.at||0, items:s.learnSuggested.items}];
   }
@@ -1150,7 +1154,12 @@ function learnBatchChip(b){
   return `<div class="card" data-act="openBatch" data-id="${b.id}" style="padding:10px;cursor:pointer">
     <div class="row" style="justify-content:space-between;align-items:center"><span class="sm">${b.topic?`🎯 ${esc(b.topic.slice(0,40))}`:"✦ general"}</span><span class="faint sm">${sv?sv+" saved · ":""}${n} · ${fmtDate(b.at)} ›</span></div></div>`;
 }
-function blockerCard(x,idx){
+function blockerRunChip(r){
+  const n=(r.items||[]).length;
+  return `<div class="card" data-act="openRun" data-id="${r.id}" style="padding:10px;cursor:pointer">
+    <div class="row" style="justify-content:space-between;align-items:center"><span class="sm">🎯 ${n} blocker${n===1?"":"s"} · ${fmtDate(r.at)}</span><span class="faint sm">open ›</span></div></div>`;
+}
+function blockerCard(x,runId,idx){
   const clip="max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:bottom";
   const tchips=(x.threadIds||[]).map(id=>{ const th=(S.threads||[]).find(t=>t.id===id); return th?`<a class="pill" href="#/thread/${id}" style="text-decoration:none;${clip}">↳ ${esc((th.title||"").slice(0,40))}</a>`:""; }).filter(Boolean).join(" ");
   const frows=(x.fragmentIds||[]).map(id=>{ const f=(S.fragments||[]).find(g=>g.id===id); if(!f) return ""; const snip=esc(String(f.body||"").replace(/\s+/g," ").slice(0,90)); const inner=`📄 ${snip}…`; return f.threadId?`<a href="#/thread/${f.threadId}" class="sm" style="display:block;color:inherit;text-decoration:none;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px">${inner}</a>`:`<div class="sm" style="opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px">${inner}</div>`; }).filter(Boolean).join("");
@@ -1159,11 +1168,11 @@ function blockerCard(x,idx){
     ${x.why?`<div class="sm" style="margin-top:6px">${esc(x.why)}</div>`:""}
     ${tchips?`<div class="row sm" style="gap:6px;margin-top:7px;flex-wrap:wrap">${tchips}</div>`:""}
     ${frows?`<div style="margin-top:6px">${frows}</div>`:""}
-    <div class="btnrow" style="margin-top:10px"><button class="sm primary" data-act="topicSuggest" data-i="${idx}" ${learnBusy?"disabled":""}>✦ Get learning suggestions →</button></div>
+    <div class="btnrow" style="margin-top:10px"><button class="sm primary" data-act="topicSuggest" data-run="${runId}" data-i="${idx}" ${learnBusy?"disabled":""}>✦ Get learning suggestions →</button></div>
   </div>`;
 }
 function viewLearn(){
-  S.learn=S.learn||[]; S.learnBatches=S.learnBatches||[]; S.learnBlockers=S.learnBlockers||{at:0,items:[]};
+  S.learn=S.learn||[]; S.learnBatches=S.learnBatches||[]; S.blockerRuns=S.blockerRuns||[];
   const canAI = !!(SYNC && SYNC.learn);
   // batch detail page
   if(UI.learnBatchId){
@@ -1173,9 +1182,17 @@ function viewLearn(){
       ${b.items.map((x,i)=>learnCard(x,{batchId:b.id,idx:i})).join("")}
       <div class="btnrow" style="margin-top:12px"><button class="ghost grow" data-act="delLearnBatch" data-id="${b.id}">🗑 Delete this batch</button></div>`;
   }
+  // blocker-run detail page
+  if(UI.learnRunId){
+    const r=S.blockerRuns.find(x=>x.id===UI.learnRunId);
+    if(r) return `
+      <div class="row" style="gap:8px;align-items:center;margin-bottom:8px"><button class="sm ghost" data-act="backLearn">‹ Back</button><span class="faint sm">🎯 Blockers · ${fmtDate(r.at)}</span></div>
+      ${(r.items||[]).map((x,i)=>blockerCard(x,r.id,i)).join("")}
+      <div class="btnrow" style="margin-top:12px"><button class="ghost grow" data-act="delRun" data-id="${r.id}">🗑 Delete this analysis</button></div>`;
+  }
   const batches=S.learnBatches.slice().sort((a,b)=>(b.at||0)-(a.at||0));
   const saved = S.learn.slice().sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
-  const bl=S.learnBlockers;
+  const runs=S.blockerRuns.slice().sort((a,b)=>(b.at||0)-(a.at||0));
   const seg=`<div class="seg" style="margin-bottom:12px">
     <button class="${learnTab==='blockers'?'on':''}" data-act="learnTab" data-v="blockers">Blockers</button>
     <button class="${learnTab==='suggest'?'on':''}" data-act="learnTab" data-v="suggest">Suggestions${batches.length?` (${batches.length})`:""}</button>
@@ -1204,14 +1221,16 @@ function viewLearn(){
     `;
   }
   // blockers tab
+  const newestRun=runs[0]; const olderRuns=runs.slice(1);
   return seg + `
   <div class="card">
     <div style="font-weight:600">🎯 Biggest blockers — where learning pays off most</div>
-    <p class="faint sm" style="margin:6px 2px 10px">Analyzes your threads &amp; recent thinking for the highest-impact, high-ROI areas to learn about &amp; reflect on. Pick one to get focused learning suggestions.</p>
-    <button class="primary" data-act="analyzeBlockers" ${canAI&&!blockersBusy?"":"disabled"}>${blockersBusy?"◌ analyzing…":(bl.items.length?"↻ Re-analyze":"🎯 Analyze my blockers")}</button>
+    <p class="faint sm" style="margin:6px 2px 10px">Analyzes your threads &amp; recent thinking for the highest-impact, high-ROI areas to learn about &amp; reflect on — building on your past analyses. Pick one to get focused learning suggestions.</p>
+    <button class="primary" data-act="analyzeBlockers" ${canAI&&!blockersBusy?"":"disabled"}>${blockersBusy?"◌ analyzing…":(runs.length?"↻ Re-analyze":"🎯 Analyze my blockers")}</button>
     ${canAI?"":`<p class="faint sm" style="margin-top:6px">Needs the Mini + API key.</p>`}
   </div>
-  ${bl.items.length?`<p class="faint sm" style="margin:14px 2px 6px">Ranked by leverage · ${fmtDate(bl.at)}</p>${bl.items.map((x,i)=>blockerCard(x,i)).join("")}`:`<div class="muted sm" style="margin-top:14px">No analysis yet. Tap “Analyze my blockers”.</div>`}
+  ${newestRun?`<p class="faint sm" style="margin:14px 2px 6px">Latest · ranked by leverage · ${fmtDate(newestRun.at)}</p>${(newestRun.items||[]).map((x,i)=>blockerCard(x,newestRun.id,i)).join("")}`:`<div class="muted sm" style="margin-top:14px">No analysis yet. Tap “Analyze my blockers”.</div>`}
+  ${olderRuns.length?`<p class="faint sm" style="margin:16px 2px 6px">Earlier analyses (${olderRuns.length})</p>${olderRuns.map(blockerRunChip).join("")}`:""}
   `;
 }
 function navigate(h){ if(location.hash===h) applyHash(); else location.hash=h; }
@@ -1223,7 +1242,7 @@ function applyHash(){
   else if(sec==="projects"){ UI.tab="projects"; }
   else if(sec==="project"){ if(parts[1] && project(parts[1])){ UI.tab="project"; UI.projectId=parts[1]; } else UI.tab="projects"; }
   else if(sec==="tasks"){ UI.tab="tasks"; taskTab = (parts[1]==="plans") ? "plans" : "todo"; }
-  else if(sec==="learn"){ UI.tab="learn"; UI.learnBatchId = (parts[1]==="b" && parts[2]) ? parts[2] : null; if(parts[1]==="suggest") learnTab="suggest"; else if(parts[1]==="list") learnTab="list"; else if(parts[1]==="blockers"||!parts[1]) learnTab="blockers"; }
+  else if(sec==="learn"){ UI.tab="learn"; UI.learnBatchId = (parts[1]==="b" && parts[2]) ? parts[2] : null; UI.learnRunId = (parts[1]==="br" && parts[2]) ? parts[2] : null; if(parts[1]==="suggest") learnTab="suggest"; else if(parts[1]==="list") learnTab="list"; else if(parts[1]==="blockers"||!parts[1]) learnTab="blockers"; }
   else if(sec==="global"){ UI.tab="global"; }
   else { UI.tab="capture"; }
   window.scrollTo(0,0); render();
@@ -1263,7 +1282,9 @@ const ACT = {
   threadFilter(b){ navigate("#/threads/"+b.dataset.v); },
   taskTab(b){ todoShowAll=false; navigate("#/tasks/"+b.dataset.v); },
   suggestLearn(){ learnGenerate(""); },
-  topicSuggest(b){ const x=(S.learnBlockers&&S.learnBlockers.items)?S.learnBlockers.items[+b.dataset.i]:null; if(x) learnGenerate(x.title); },
+  topicSuggest(b){ const run=(S.blockerRuns||[]).find(z=>z.id===b.dataset.run); const x=run?run.items[+b.dataset.i]:null; if(x) learnGenerate(x.title); },
+  openRun(b){ navigate("#/learn/br/"+b.dataset.id); },
+  delRun(b){ if(!confirm("Delete this analysis?")) return; S.blockerRuns=(S.blockerRuns||[]).filter(z=>z.id!==b.dataset.id); save(); navigate("#/learn/blockers"); },
   async analyzeBlockers(){
     if(!(SYNC&&SYNC.blockers)||blockersBusy) return;
     blockersBusy=true; render();
@@ -1271,7 +1292,7 @@ const ACT = {
       const r=await fetch(SYNC.blockers,{method:"POST",headers:{Authorization:"Bearer "+SYNC.token,"Content-Type":"application/json"},body:"{}"});
       const j=await r.json();
       const arr=Array.isArray(j.blockers)?j.blockers:[];
-      if(arr.length){ S.learnBlockers={at:now(),items:arr}; save(); }
+      if(arr.length){ S.blockerRuns.unshift({id:uid(),at:now(),items:arr}); if(S.blockerRuns.length>20) S.blockerRuns=S.blockerRuns.slice(0,20); save(); }
       else toast(j.error?("⚠️ "+j.error):"No blockers returned");
     }catch(e){ toast("⚠️ Analyze failed — is the Mini reachable?"); }
     blockersBusy=false; render();
