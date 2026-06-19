@@ -125,6 +125,8 @@ function buildLearnPrompt(data, social) {
   const frags = (data.fragments || []).slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 12).map(f => `  - ${String(f.body || "").replace(/\s+/g, " ").slice(0, 220)}`).join("\n") || "  (none)";
   const tasks = openTasksOrdered(data).slice(0, 15).map(t => `  - ${t.title}`).join("\n") || "  (none)";
   const refl = (data.reflections || []).slice().sort((a, b) => b.createdAt - a.createdAt)[0]; const reflTxt = refl ? String(refl.body).slice(0, 800) : "(none)";
+  const seenT = []; (data.learnBatches || []).forEach(b => (b.items || []).forEach(i => seenT.push(i.title))); (data.learn || []).forEach(i => seenT.push(i.title));
+  const seen = seenT.filter(Boolean).slice(0, 120).map(t => `  - ${t}`).join("\n") || "  (none yet)";
   return `You are my learning scout. From the REAL problems I'm wrestling with right now, suggest high-leverage learning material I should consume — then how I could turn what I learn into my own content (I run a small learning-out-loud channel; see my identity doc).
 
 ## MY LIFE GOALS
@@ -140,6 +142,9 @@ ${reflTxt}
 ## MY CONTENT IDENTITY (for the 'angle' field)
 ${social || "(small learning-out-loud channel; first principles; clearer thinking; a few good minds over an audience)"}
 
+## ALREADY SUGGESTED — DO NOT REPEAT ANY OF THESE (give fresh, different resources):
+${seen}
+
 ## RULES
 - LANGUAGE: give me a MIX of English AND Chinese-language resources — both Traditional (繁體) and Simplified (简体). Include creators from Chinese-speaking places (中國大陸 / 香港 / 台灣 / 馬來西亞 / etc.). I'm a bilingual Cantonese speaker — Chinese content is as valuable to me as English. Aim for roughly half Chinese, half English across the set.
 - MEDIA DIVERSITY: do NOT default to books. Give a real spread — at least 2 YouTube videos/channels and at least 1 blog/article, alongside podcasts/books/talks. Choose the medium that best fits each idea.
@@ -148,6 +153,7 @@ ${social || "(small learning-out-loud channel; first principles; clearer thinkin
 - For each suggestion set "threadIds" to the bracketed IDs from the ACTIVE THREADS list above that it maps to (so I can jump straight to that thinking). Use ONLY IDs from that list; omit if none truly fit.
 - Set "lang" to one of: "EN", "繁中", "简中".
 - EXACTLY 4 suggestions — keep it tight and high-signal. Across the 4: at least 1 Chinese and 1 English, and mixed media (don't make all 4 books — include at least 1 YouTube or blog).
+- NONE of the 4 may duplicate anything in the ALREADY SUGGESTED list above — pick genuinely new, different resources.
 
 ## OUTPUT — STRICT JSON ONLY, no prose, no markdown fences:
 {"suggestions":[{"title":"","creator":"","type":"book|podcast|youtube|article|blog|talk","lang":"EN|繁中|简中","relevance":"which of MY threads/problems this speaks to, by name","takeaway":"the specific thing I'll get","impact":1-5,"find":"how to find it (search hint, not a URL)","angle":"how I could turn this + my own experience into a short TorGroFish video/post","threadIds":["id-from-list"]}]}`;
@@ -190,6 +196,7 @@ function send(res, code, body, type) {
 function readData() {
   try { return JSON.parse(fs.readFileSync(DATA_FILE, "utf8")); } catch (e) { return null; }
 }
+function appVersion() { try { const m = fs.readFileSync(path.join(APP_DIR, "sw.js"), "utf8").match(/loom-shell-v(\d+)/); return m ? m[1] : "0"; } catch (e) { return "0"; } }
 
 const server = http.createServer((req, res) => {
   cors(res, req);
@@ -201,6 +208,9 @@ const server = http.createServer((req, res) => {
   if (urlPath === "") urlPath = "/";
   const qTok = decodeURIComponent(((/[?&]t=([^&]+)/.exec(req.url || "")) || [])[1] || "");
   const authedAny = () => authed(req) || eqToken(qTok);   // header OR ?t= (for <audio> playback)
+
+  // ---- version probe (no auth; client POSTs so the service worker never intercepts it) ----
+  if (urlPath === "/version") { return send(res, 200, JSON.stringify({ v: appVersion() }), TYPES[".json"]); }
 
   // ---- data API ----
   if (urlPath === "/data") {
@@ -381,7 +391,7 @@ const server = http.createServer((req, res) => {
     const ext = path.extname(full).toLowerCase();
     if (ext === ".html") {
       // inject sync config so the app on the tailnet just works, no token typing
-      const cfg = `<script>window.LOOM_SYNC=${JSON.stringify({ token: TOKEN, url: BASE + "/data", sw: BASE + "/sw.js", scope: BASE + "/", transcribe: BASE + "/transcribe", audio: BASE + "/audio", summarize: BASE + "/summarize", plan: anthKey() ? BASE + "/plan" : null, learn: anthKey() ? BASE + "/learn" : null })};</script>`;
+      const cfg = `<script>window.LOOM_SYNC=${JSON.stringify({ token: TOKEN, url: BASE + "/data", sw: BASE + "/sw.js", scope: BASE + "/", transcribe: BASE + "/transcribe", audio: BASE + "/audio", summarize: BASE + "/summarize", plan: anthKey() ? BASE + "/plan" : null, learn: anthKey() ? BASE + "/learn" : null, version: BASE + "/version", ver: appVersion() })};</script>`;
       const html = buf.toString("utf8").replace("<!--LOOM_CONFIG-->", cfg);
       res.setHeader("Cache-Control", "no-cache");
       return send(res, 200, html, TYPES[".html"]);

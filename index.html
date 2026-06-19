@@ -1517,6 +1517,13 @@ function initSync(){
   if(!SYNC) return;
   pull();
   document.addEventListener("visibilitychange",()=>{ if(!document.hidden) pull(); });
+  // version check independent of the service worker: POST so the SW never intercepts it
+  if(SYNC.version && SYNC.ver){
+    const checkVer=async()=>{ try{ const r=await fetch(SYNC.version,{method:"POST",cache:"no-store"}); const j=await r.json(); if(j&&j.v&&String(j.v)!==String(SYNC.ver)) showUpdateBanner(); }catch(e){} };
+    setInterval(checkVer, 60*1000);
+    document.addEventListener("visibilitychange",()=>{ if(!document.hidden) checkVer(); });
+    checkVer();
+  }
 }
 
 /* ============================================================
