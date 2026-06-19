@@ -118,7 +118,33 @@ Reply in the language my entries are written in.` : `## GIVE ME — a short TODA
 3. ON-TRACK & COHERENCE — one sharp coaching line.`}
 Reply in the language my entries are written in.`;
 }
-function buildLearnPrompt(data, social) {
+function buildBlockersPrompt(data) {
+  const g = data.global || {};
+  const goals = (g.goals || []).map((x, i) => `  ${i + 1}. ${x}`).join("\n") || "  (none)";
+  const active = (data.threads || []).filter(t => t.status === "active").sort((a, b) => b.lastActivityAt - a.lastActivityAt).slice(0, 24).map(t => `  - [${t.id}] "${t.title}" [${domLabel(data, t.domain)}]`).join("\n") || "  (none)";
+  const frags = (data.fragments || []).slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 18).map(f => `  - [${f.id}] ${String(f.body || "").replace(/\s+/g, " ").slice(0, 200)}`).join("\n") || "  (none)";
+  const tasks = openTasksOrdered(data).slice(0, 15).map(t => `  - ${t.title}`).join("\n") || "  (none)";
+  return `You are my executive coach. Look across my whole system and name my BIGGEST blockers — the highest-impact, high-ROI areas worth my time to LEARN about and REFLECT on. Don't give a flat list of ten; find the few ROOTS that generate most of the downstream problems. Be honest, like a coach, not a cheerleader.
+
+## MY LIFE GOALS
+${goals}
+## ACTIVE THREADS (id "title" [domain])
+${active}
+## RECENT RAW THINKING (fragments — id + snippet)
+${frags}
+## OPEN TASKS
+${tasks}
+
+## RULES
+- 4-5 blockers max, ranked by leverage/ROI (highest first).
+- Prefer ROOT causes over symptoms; if several threads share one root, name the root.
+- For each, set "threadIds" and "fragmentIds" to the bracketed IDs above that evidence it (use ONLY IDs from the lists; omit if none truly fit).
+- "why" = an honest 2-3 sentence case for why this is high-impact and worth learning about NOW.
+
+## OUTPUT — STRICT JSON ONLY, no prose or fences:
+{"blockers":[{"title":"short topic name","why":"...","roi":1-5,"threadIds":["..."],"fragmentIds":["..."]}]}`;
+}
+function buildLearnPrompt(data, social, topic) {
   const g = data.global || {};
   const goals = (g.goals || []).map((x, i) => `  ${i + 1}. ${x}`).join("\n") || "  (none)";
   const active = (data.threads || []).filter(t => t.status === "active").sort((a, b) => b.lastActivityAt - a.lastActivityAt).slice(0, 20).map(t => `  - [${t.id}] "${t.title}" [${domLabel(data, t.domain)}]`).join("\n") || "  (none)";
@@ -128,7 +154,7 @@ function buildLearnPrompt(data, social) {
   const seenT = []; (data.learnBatches || []).forEach(b => (b.items || []).forEach(i => seenT.push(i.title))); (data.learn || []).forEach(i => seenT.push(i.title));
   const seen = seenT.filter(Boolean).slice(0, 120).map(t => `  - ${t}`).join("\n") || "  (none yet)";
   return `You are my learning scout. From the REAL problems I'm wrestling with right now, suggest high-leverage learning material I should consume — then how I could turn what I learn into my own content (I run a small learning-out-loud channel; see my identity doc).
-
+${topic ? `\n## FOCUS — all 4 suggestions must be about THIS specific area: "${topic}". Make them directly help me learn/act on it. Still tie each to my threads below.\n` : ""}
 ## MY LIFE GOALS
 ${goals}
 ## WHAT I'M ACTIVELY WRESTLING WITH (threads)
@@ -283,16 +309,33 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // ---- Lucid: personalized learning suggestions from my real threads/fragments ----
-  if (urlPath === "/learn" && req.method === "POST") {
+  // ---- Lucid: blockers analysis — highest-impact areas to learn/reflect on ----
+  if (urlPath === "/blockers" && req.method === "POST") {
     if (!authed(req)) return send(res, 401, "unauthorized");
     const data = readData();
     if (!data) return send(res, 500, JSON.stringify({ error: "no data on the Mini" }), TYPES[".json"]);
-    let social = ""; try { social = fs.readFileSync(path.join(APP_DIR, "SOCIAL_IDENTITY.md"), "utf8").slice(0, 2000); } catch (e) {}
-    callAnthropic(buildLearnPrompt(data, social), 2200, (err, text) => {
-      if (err) { console.error("[loom] learn failed:", err.message); return send(res, 502, JSON.stringify({ error: err.message }), TYPES[".json"]); }
+    callAnthropic(buildBlockersPrompt(data), 2000, (err, text) => {
+      if (err) { console.error("[loom] blockers failed:", err.message); return send(res, 502, JSON.stringify({ error: err.message }), TYPES[".json"]); }
       let out; try { out = JSON.parse(String(text).replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim()); } catch (e) { out = { error: "parse", raw: text }; }
       send(res, 200, JSON.stringify(out), TYPES[".json"]);
+    });
+    return;
+  }
+
+  // ---- Lucid: personalized learning suggestions (optionally focused on a topic) ----
+  if (urlPath === "/learn" && req.method === "POST") {
+    if (!authed(req)) return send(res, 401, "unauthorized");
+    let body = ""; req.on("data", c => { body += c; if (body.length > 64 * 1024) req.destroy(); });
+    req.on("end", () => {
+      let opts = {}; try { opts = JSON.parse(body || "{}"); } catch (e) {}
+      const data = readData();
+      if (!data) return send(res, 500, JSON.stringify({ error: "no data on the Mini" }), TYPES[".json"]);
+      let social = ""; try { social = fs.readFileSync(path.join(APP_DIR, "SOCIAL_IDENTITY.md"), "utf8").slice(0, 2000); } catch (e) {}
+      callAnthropic(buildLearnPrompt(data, social, opts.topic), 2200, (err, text) => {
+        if (err) { console.error("[loom] learn failed:", err.message); return send(res, 502, JSON.stringify({ error: err.message }), TYPES[".json"]); }
+        let out; try { out = JSON.parse(String(text).replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim()); } catch (e) { out = { error: "parse", raw: text }; }
+        send(res, 200, JSON.stringify(out), TYPES[".json"]);
+      });
     });
     return;
   }
@@ -391,7 +434,7 @@ const server = http.createServer((req, res) => {
     const ext = path.extname(full).toLowerCase();
     if (ext === ".html") {
       // inject sync config so the app on the tailnet just works, no token typing
-      const cfg = `<script>window.LOOM_SYNC=${JSON.stringify({ token: TOKEN, url: BASE + "/data", sw: BASE + "/sw.js", scope: BASE + "/", transcribe: BASE + "/transcribe", audio: BASE + "/audio", summarize: BASE + "/summarize", plan: anthKey() ? BASE + "/plan" : null, learn: anthKey() ? BASE + "/learn" : null, version: BASE + "/version", ver: appVersion() })};</script>`;
+      const cfg = `<script>window.LOOM_SYNC=${JSON.stringify({ token: TOKEN, url: BASE + "/data", sw: BASE + "/sw.js", scope: BASE + "/", transcribe: BASE + "/transcribe", audio: BASE + "/audio", summarize: BASE + "/summarize", plan: anthKey() ? BASE + "/plan" : null, learn: anthKey() ? BASE + "/learn" : null, blockers: anthKey() ? BASE + "/blockers" : null, version: BASE + "/version", ver: appVersion() })};</script>`;
       const html = buf.toString("utf8").replace("<!--LOOM_CONFIG-->", cfg);
       res.setHeader("Cache-Control", "no-cache");
       return send(res, 200, html, TYPES[".html"]);

@@ -176,7 +176,7 @@ function load(){
     const raw = localStorage.getItem(KEY);
     if(raw) return migrate(JSON.parse(raw));
   }catch(e){ console.warn("load failed",e); }
-  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], tasks:[], reflections:[], plans:[], learn:[], learnBatches:[], domains:DEFAULT_DOMAINS.map(d=>[d[0],d[1]]), fragTypes:DEFAULT_FRAG_TYPES.slice(), meta:{lastBackup:0,updatedAt:0} };
+  return { global:{models:[],goals:[]}, projects:[], threads:[], fragments:[], turns:[], tasks:[], reflections:[], plans:[], learn:[], learnBatches:[], learnBlockers:{at:0,items:[]}, domains:DEFAULT_DOMAINS.map(d=>[d[0],d[1]]), fragTypes:DEFAULT_FRAG_TYPES.slice(), meta:{lastBackup:0,updatedAt:0} };
 }
 function migrate(s){
   s.global = s.global || {models:[],goals:[]};
@@ -189,6 +189,7 @@ function migrate(s){
   s.plans = s.plans || [];
   s.learn = s.learn || [];
   s.learnBatches = s.learnBatches || [];
+  s.learnBlockers = s.learnBlockers || {at:0,items:[]};
   if(s.learnSuggested && Array.isArray(s.learnSuggested.items) && s.learnSuggested.items.length && !s.learnBatches.length){
     s.learnBatches = [{id:Math.random().toString(36).slice(2,9), at:s.learnSuggested.at||0, items:s.learnSuggested.items}];
   }
@@ -1092,7 +1093,21 @@ function openListEdit(kind, i){
 /* ---- hash router: #/capture · #/threads[/filter] · #/thread/<id> · #/projects · #/project/<id> · #/global ---- */
 const ROUTE_FILTERS = ["active","sorted","parked","killed","all"];
 /* ---------- LEARN (Lucid) ---------- */
-let learnBusy=false; let learnTab="suggest";
+let learnBusy=false; let blockersBusy=false; let learnTab="blockers"; let learnTopicFilter=""; let learnSearch="";
+function learnSearchInput(v){ learnSearch=v; render(); const e=el("learnSearchBox"); if(e){ e.focus(); try{ e.setSelectionRange(v.length,v.length); }catch(_){} } }
+function learnTopicSelect(v){ learnTopicFilter=v; render(); }
+async function learnGenerate(topic){
+  if(!(SYNC&&SYNC.learn)||learnBusy) return;
+  learnBusy=true; render(); if(topic) toast("✦ finding learning on “"+topic.slice(0,24)+"”…");
+  try{
+    const r=await fetch(SYNC.learn,{method:"POST",headers:{Authorization:"Bearer "+SYNC.token,"Content-Type":"application/json"},body:JSON.stringify(topic?{topic}:{})});
+    const j=await r.json();
+    const arr=Array.isArray(j.suggestions)?j.suggestions:[];
+    if(arr.length){ const id=uid(); S.learnBatches.unshift({id,at:now(),topic:topic||"",items:arr}); if(S.learnBatches.length>30) S.learnBatches=S.learnBatches.slice(0,30); save(); learnBusy=false; navigate("#/learn/b/"+id); return; }
+    toast(j.error?("⚠️ "+j.error):"No suggestions returned");
+  }catch(e){ toast("⚠️ Suggest failed — is the Mini reachable?"); }
+  learnBusy=false; render();
+}
 const LEARN_STATUS={queued:"📥 queued",learning:"📖 learning",done:"✅ done"};
 function learnTypeIcon(t){ return ({book:"📕",podcast:"🎙️",youtube:"▶️",article:"📄",blog:"📝",talk:"🎤"})[t]||"✦"; }
 function learnLinks(x){
@@ -1133,39 +1148,69 @@ function learnCard(x,opts){
 function learnBatchChip(b){
   const n=(b.items||[]).length, sv=(b.items||[]).filter(i=>i.saved).length;
   return `<div class="card" data-act="openBatch" data-id="${b.id}" style="padding:10px;cursor:pointer">
-    <div class="row" style="justify-content:space-between;align-items:center"><span class="sm">✦ ${n} suggestion${n===1?"":"s"} · ${fmtDate(b.at)}</span><span class="faint sm">${sv?sv+" saved · ":""}open ›</span></div></div>`;
+    <div class="row" style="justify-content:space-between;align-items:center"><span class="sm">${b.topic?`🎯 ${esc(b.topic.slice(0,40))}`:"✦ general"}</span><span class="faint sm">${sv?sv+" saved · ":""}${n} · ${fmtDate(b.at)} ›</span></div></div>`;
+}
+function blockerCard(x,idx){
+  const tchips=(x.threadIds||[]).map(id=>{ const th=(S.threads||[]).find(t=>t.id===id); return th?`<a class="pill" href="#/thread/${id}" style="text-decoration:none">↳ ${esc((th.title||"").slice(0,38))}</a>`:""; }).filter(Boolean).join(" ");
+  const fchips=(x.fragmentIds||[]).map(id=>{ const f=(S.fragments||[]).find(g=>g.id===id); if(!f) return ""; const snip=esc(String(f.body||"").replace(/\s+/g," ").slice(0,70)); return f.threadId?`<a class="pill" href="#/thread/${f.threadId}" style="text-decoration:none">📄 ${snip}…</a>`:`<span class="pill">📄 ${snip}…</span>`; }).filter(Boolean).join(" ");
+  return `<div class="card" style="padding:12px">
+    <div class="row" style="gap:8px;align-items:baseline"><span class="pill">ROI ${esc(String(x.roi||"?"))}/5</span><div style="font-weight:600">${esc(x.title||"")}</div></div>
+    ${x.why?`<div class="sm" style="margin-top:6px">${esc(x.why)}</div>`:""}
+    ${tchips?`<div class="row sm" style="gap:6px;margin-top:7px;flex-wrap:wrap">${tchips}</div>`:""}
+    ${fchips?`<div class="row sm" style="gap:6px;margin-top:5px;flex-wrap:wrap">${fchips}</div>`:""}
+    <div class="btnrow" style="margin-top:10px"><button class="sm primary" data-act="topicSuggest" data-i="${idx}" ${learnBusy?"disabled":""}>✦ Get learning suggestions →</button></div>
+  </div>`;
 }
 function viewLearn(){
-  S.learn=S.learn||[]; S.learnBatches=S.learnBatches||[];
+  S.learn=S.learn||[]; S.learnBatches=S.learnBatches||[]; S.learnBlockers=S.learnBlockers||{at:0,items:[]};
   const canAI = !!(SYNC && SYNC.learn);
   // batch detail page
   if(UI.learnBatchId){
     const b=S.learnBatches.find(x=>x.id===UI.learnBatchId);
     if(b) return `
-      <div class="row" style="gap:8px;align-items:center;margin-bottom:8px"><button class="sm ghost" data-act="backLearn">‹ Back</button><span class="faint sm">Batch · ${fmtDate(b.at)} · ${b.items.length} suggestions</span></div>
+      <div class="row" style="gap:8px;align-items:center;margin-bottom:8px"><button class="sm ghost" data-act="backLearn">‹ Back</button><span class="faint sm">${b.topic?`🎯 ${esc(b.topic.slice(0,46))} · `:""}${fmtDate(b.at)}</span></div>
       ${b.items.map((x,i)=>learnCard(x,{batchId:b.id,idx:i})).join("")}
       <div class="btnrow" style="margin-top:12px"><button class="ghost grow" data-act="delLearnBatch" data-id="${b.id}">🗑 Delete this batch</button></div>`;
   }
   const batches=S.learnBatches.slice().sort((a,b)=>(b.at||0)-(a.at||0));
-  const newest=batches[0]; const older=batches.slice(1);
   const saved = S.learn.slice().sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
+  const bl=S.learnBlockers;
   const seg=`<div class="seg" style="margin-bottom:12px">
-    <button class="${learnTab!=='list'?'on':''}" data-act="learnTab" data-v="suggest">Suggestions${batches.length?` (${batches.length})`:""}</button>
+    <button class="${learnTab==='blockers'?'on':''}" data-act="learnTab" data-v="blockers">Blockers</button>
+    <button class="${learnTab==='suggest'?'on':''}" data-act="learnTab" data-v="suggest">Suggestions${batches.length?` (${batches.length})`:""}</button>
     <button class="${learnTab==='list'?'on':''}" data-act="learnTab" data-v="list">My list${saved.length?` (${saved.length})`:""}</button>
   </div>`;
   if(learnTab==='list'){
-    return seg + (saved.length? saved.map(x=>learnCard(x,{curated:true})).join("") : `<div class="muted sm" style="margin-top:6px">No saved learning yet. Save the keepers from the Suggestions tab.</div>`);
+    return seg + (saved.length? saved.map(x=>learnCard(x,{curated:true})).join("") : `<div class="muted sm" style="margin-top:6px">No saved learning yet. Save the keepers from a suggestion batch.</div>`);
   }
+  if(learnTab==='suggest'){
+    const topics=[...new Set(batches.map(b=>b.topic).filter(Boolean))];
+    const q=learnSearch.trim().toLowerCase();
+    let shown=batches;
+    if(learnTopicFilter) shown=shown.filter(b=>(b.topic||"")===learnTopicFilter);
+    if(q) shown=shown.filter(b=>((b.topic||"").toLowerCase().includes(q)) || (b.items||[]).some(it=>(it.title||"").toLowerCase().includes(q)||(it.creator||"").toLowerCase().includes(q)));
+    return seg + `
+    <div class="card">
+      <p class="faint sm" style="margin:0 2px 10px">Whole-life suggestions across everything you're working on. For a focused set, pick a blocker on the Blockers tab.</p>
+      <button class="primary" data-act="suggestLearn" ${canAI&&!learnBusy?"":"disabled"}>${learnBusy?"◌ thinking…":"✦ Suggest (whole life)"}</button>
+      ${canAI?"":`<p class="faint sm" style="margin-top:6px">Needs the Mini + API key.</p>`}
+    </div>
+    ${batches.length?`<div class="row" style="gap:8px;margin:12px 2px 8px">
+      <select onchange="learnTopicSelect(this.value)" style="flex:0 0 auto">${[`<option value="">All topics</option>`].concat(topics.map(t=>`<option value="${esc(t)}" ${learnTopicFilter===t?"selected":""}>🎯 ${esc(t.slice(0,30))}</option>`)).join("")}</select>
+      <input id="learnSearchBox" class="grow" placeholder="filter…" value="${esc(learnSearch)}" oninput="learnSearchInput(this.value)"/>
+    </div>`:""}
+    ${shown.length? shown.map(learnBatchChip).join("") : (batches.length?`<div class="muted sm">No batches match.</div>`:`<div class="muted sm" style="margin-top:6px">No suggestion batches yet. Generate a whole-life set above, or pick a blocker.</div>`)}
+    `;
+  }
+  // blockers tab
   return seg + `
   <div class="card">
-    <div style="font-weight:600">✦ Learn — material for what you're actually working on</div>
-    <p class="faint sm" style="margin:6px 2px 10px">Reads your live threads &amp; recent thinking, then suggests material tied to your real problems — each with an angle to turn it into your own content. Batches are kept so you can come back and pick later.</p>
-    <button class="primary" data-act="suggestLearn" ${canAI&&!learnBusy?"":"disabled"}>${learnBusy?"◌ thinking…":(batches.length?"↻ New suggestions":"✦ Suggest learning")}</button>
+    <div style="font-weight:600">🎯 Biggest blockers — where learning pays off most</div>
+    <p class="faint sm" style="margin:6px 2px 10px">Analyzes your threads &amp; recent thinking for the highest-impact, high-ROI areas to learn about &amp; reflect on. Pick one to get focused learning suggestions.</p>
+    <button class="primary" data-act="analyzeBlockers" ${canAI&&!blockersBusy?"":"disabled"}>${blockersBusy?"◌ analyzing…":(bl.items.length?"↻ Re-analyze":"🎯 Analyze my blockers")}</button>
     ${canAI?"":`<p class="faint sm" style="margin-top:6px">Needs the Mini + API key.</p>`}
   </div>
-  ${newest?`<p class="faint sm" style="margin:14px 2px 6px">Latest suggestions · ${fmtDate(newest.at)} — save the keepers:</p>${newest.items.map((x,i)=>learnCard(x,{batchId:newest.id,idx:i})).join("")}`:""}
-  ${older.length?`<p class="faint sm" style="margin:16px 2px 6px">Earlier batches (${older.length})</p>${older.map(learnBatchChip).join("")}`:""}
-  ${(!newest)?`<div class="muted sm" style="margin-top:14px">No suggestions yet. Tap “Suggest learning”.</div>`:""}
+  ${bl.items.length?`<p class="faint sm" style="margin:14px 2px 6px">Ranked by leverage · ${fmtDate(bl.at)}</p>${bl.items.map((x,i)=>blockerCard(x,i)).join("")}`:`<div class="muted sm" style="margin-top:14px">No analysis yet. Tap “Analyze my blockers”.</div>`}
   `;
 }
 function navigate(h){ if(location.hash===h) applyHash(); else location.hash=h; }
@@ -1177,7 +1222,7 @@ function applyHash(){
   else if(sec==="projects"){ UI.tab="projects"; }
   else if(sec==="project"){ if(parts[1] && project(parts[1])){ UI.tab="project"; UI.projectId=parts[1]; } else UI.tab="projects"; }
   else if(sec==="tasks"){ UI.tab="tasks"; taskTab = (parts[1]==="plans") ? "plans" : "todo"; }
-  else if(sec==="learn"){ UI.tab="learn"; UI.learnBatchId = (parts[1]==="b" && parts[2]) ? parts[2] : null; if(parts[1]==="list") learnTab="list"; else if(parts[1]==="suggest"||!parts[1]) learnTab="suggest"; }
+  else if(sec==="learn"){ UI.tab="learn"; UI.learnBatchId = (parts[1]==="b" && parts[2]) ? parts[2] : null; if(parts[1]==="suggest") learnTab="suggest"; else if(parts[1]==="list") learnTab="list"; else if(parts[1]==="blockers"||!parts[1]) learnTab="blockers"; }
   else if(sec==="global"){ UI.tab="global"; }
   else { UI.tab="capture"; }
   window.scrollTo(0,0); render();
@@ -1216,17 +1261,19 @@ const ACT = {
   saveFragment,
   threadFilter(b){ navigate("#/threads/"+b.dataset.v); },
   taskTab(b){ todoShowAll=false; navigate("#/tasks/"+b.dataset.v); },
-  async suggestLearn(){
-    if(!(SYNC&&SYNC.learn)||learnBusy) return;
-    learnBusy=true; render();
+  suggestLearn(){ learnGenerate(""); },
+  topicSuggest(b){ const x=(S.learnBlockers&&S.learnBlockers.items)?S.learnBlockers.items[+b.dataset.i]:null; if(x) learnGenerate(x.title); },
+  async analyzeBlockers(){
+    if(!(SYNC&&SYNC.blockers)||blockersBusy) return;
+    blockersBusy=true; render();
     try{
-      const r=await fetch(SYNC.learn,{method:"POST",headers:{Authorization:"Bearer "+SYNC.token,"Content-Type":"application/json"},body:"{}"});
+      const r=await fetch(SYNC.blockers,{method:"POST",headers:{Authorization:"Bearer "+SYNC.token,"Content-Type":"application/json"},body:"{}"});
       const j=await r.json();
-      const arr = Array.isArray(j.suggestions)?j.suggestions:[];
-      if(arr.length){ S.learnBatches.unshift({id:uid(),at:now(),items:arr}); if(S.learnBatches.length>20) S.learnBatches=S.learnBatches.slice(0,20); save(); }
-      else toast(j.error?("⚠️ "+j.error):"No suggestions returned");
-    }catch(e){ toast("⚠️ Suggest failed — is the Mini reachable?"); }
-    learnBusy=false; render();
+      const arr=Array.isArray(j.blockers)?j.blockers:[];
+      if(arr.length){ S.learnBlockers={at:now(),items:arr}; save(); }
+      else toast(j.error?("⚠️ "+j.error):"No blockers returned");
+    }catch(e){ toast("⚠️ Analyze failed — is the Mini reachable?"); }
+    blockersBusy=false; render();
   },
   saveLearn(b){
     const batch=(S.learnBatches||[]).find(z=>z.id===b.dataset.batch); if(!batch) return;
