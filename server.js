@@ -56,6 +56,9 @@ function tgSend(text, cb) {
   chunks.push(s);
   let i = 0; (function next() { if (i >= chunks.length) return cb && cb(null); tgApi("sendMessage", { chat_id: chat, text: chunks[i++] }, e => { if (e) return cb && cb(e); next(); }); })();
 }
+const PRI_EMOJI = { critical: "🔴", high: "🟠", med: "🟡", low: "🟢" };
+const PRI_RANK = { critical: 0, high: 1, med: 2, low: 3 };
+function effPriSrv(t) { let p = t.priority || null; if (t.escalateWithin && t.due && Date.now() >= (t.due - t.escalateWithin * 86400000)) { if ((PRI_RANK[p] ?? 9) > PRI_RANK.high) p = "high"; } return p; }
 function rollDueServer(ts, period) { const d = new Date(ts); if (period === "weekly") d.setDate(d.getDate() + 7); else if (period === "monthly") d.setMonth(d.getMonth() + 1); else if (period === "yearly") d.setFullYear(d.getFullYear() + 1); return d.getTime(); }
 function domLabel(data, key) { const m = (data.domains || []).find(x => x[0] === key); return m ? m[1] : (key || "—"); }
 function openTasksOrdered(data) { const pr = { high: 0, med: 1, low: 2 }; return (data.tasks || []).filter(t => !t.done).sort((a, b) => { const ao = a.due || 8e15, bo = b.due || 8e15; if (ao !== bo) return ao - bo; return (pr[a.priority] ?? 1) - (pr[b.priority] ?? 1); }); }
@@ -465,7 +468,7 @@ setInterval(() => {
   // Automatic: per-task TELEGRAM REMINDERS. task.reminders = [{ id, days:[0-6 Sun=0], time:"HH:MM" local, until: ts|null }]
   try {
     const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-    const cur = h * 60 + m; st.remSent = st.remSent || {}; let changed = false;
+    const cur = h * 60 + m; st.remSent = st.remSent || {}; let changed = false; const fired = [];
     for (const task of (data.tasks || [])) {
       if (task.done || !Array.isArray(task.reminders)) continue;
       for (const r of task.reminders) {
@@ -473,12 +476,18 @@ setInterval(() => {
         if (r.until && now.getTime() > r.until) continue;
         const p = String(r.time || "09:00").split(":"); const rmin = (+p[0]) * 60 + (+p[1] || 0);
         if (cur < rmin) continue;                                   // not yet time today
-        const key = task.id + ":" + (r.id || r.time);
+        const key = task.id + ":" + (r.time || "") + ":" + (r.days || []).join("");  // stable across id churn
         if (st.remSent[key] === today) continue;                    // already sent today
         st.remSent[key] = today; changed = true;
-        const due = task.due ? " — due " + new Date(task.due).toISOString().slice(0, 10) : "";
-        tgSend("⏰ Reminder: " + task.title + due);
+        const pri = effPriSrv(task);
+        const due = task.due ? " · " + new Date(task.due).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+        fired.push({ pri, text: (PRI_EMOJI[pri] || "🔔") + " " + task.title + due });
       }
+    }
+    if (fired.length) {                                             // one grouped, priority-sorted message — not a wall of bubbles
+      fired.sort((a, b) => (PRI_RANK[a.pri] ?? 9) - (PRI_RANK[b.pri] ?? 9));
+      const header = fired.length > 1 ? "🔔 " + fired.length + " reminders\n" : "";
+      tgSend(header + fired.map(f => f.text).join("\n"));
     }
     for (const k in st.remSent) { if (st.remSent[k] !== today) { delete st.remSent[k]; changed = true; } } // prune stale dedup keys
     if (changed) saveCoachState(st);
