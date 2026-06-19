@@ -1121,7 +1121,7 @@ function learnLinks(x){
 }
 function learnCard(x,opts){
   opts=opts||{};
-  const tchips=(x.threadIds||[]).map(id=>{ const th=(S.threads||[]).find(t=>t.id===id); return th?`<a class="pill" href="#/thread/${id}" style="text-decoration:none">↳ ${esc((th.title||"").slice(0,42))}</a>`:""; }).filter(Boolean).join(" ");
+  const tchips=(x.threadIds||[]).map(id=>{ const th=(S.threads||[]).find(t=>t.id===id); return th?`<a class="pill" href="#/thread/${id}" style="text-decoration:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:bottom">↳ ${esc((th.title||"").slice(0,42))}</a>`:""; }).filter(Boolean).join(" ");
   const links=learnLinks(x).map(l=>`<a class="pill" href="${l[1]}" target="_blank" rel="noopener" style="text-decoration:none">${l[0]}</a>`).join("");
   const curated=opts.curated; const nThoughts=(x.thoughts||[]).length; const lastTh=nThoughts?x.thoughts[x.thoughts.length-1].body:"";
   let footer;
@@ -1151,13 +1151,14 @@ function learnBatchChip(b){
     <div class="row" style="justify-content:space-between;align-items:center"><span class="sm">${b.topic?`🎯 ${esc(b.topic.slice(0,40))}`:"✦ general"}</span><span class="faint sm">${sv?sv+" saved · ":""}${n} · ${fmtDate(b.at)} ›</span></div></div>`;
 }
 function blockerCard(x,idx){
-  const tchips=(x.threadIds||[]).map(id=>{ const th=(S.threads||[]).find(t=>t.id===id); return th?`<a class="pill" href="#/thread/${id}" style="text-decoration:none">↳ ${esc((th.title||"").slice(0,38))}</a>`:""; }).filter(Boolean).join(" ");
-  const fchips=(x.fragmentIds||[]).map(id=>{ const f=(S.fragments||[]).find(g=>g.id===id); if(!f) return ""; const snip=esc(String(f.body||"").replace(/\s+/g," ").slice(0,70)); return f.threadId?`<a class="pill" href="#/thread/${f.threadId}" style="text-decoration:none">📄 ${snip}…</a>`:`<span class="pill">📄 ${snip}…</span>`; }).filter(Boolean).join(" ");
-  return `<div class="card" style="padding:12px">
+  const clip="max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:bottom";
+  const tchips=(x.threadIds||[]).map(id=>{ const th=(S.threads||[]).find(t=>t.id===id); return th?`<a class="pill" href="#/thread/${id}" style="text-decoration:none;${clip}">↳ ${esc((th.title||"").slice(0,40))}</a>`:""; }).filter(Boolean).join(" ");
+  const frows=(x.fragmentIds||[]).map(id=>{ const f=(S.fragments||[]).find(g=>g.id===id); if(!f) return ""; const snip=esc(String(f.body||"").replace(/\s+/g," ").slice(0,90)); const inner=`📄 ${snip}…`; return f.threadId?`<a href="#/thread/${f.threadId}" class="sm" style="display:block;color:inherit;text-decoration:none;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px">${inner}</a>`:`<div class="sm" style="opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px">${inner}</div>`; }).filter(Boolean).join("");
+  return `<div class="card" style="padding:12px;overflow:hidden">
     <div class="row" style="gap:8px;align-items:baseline"><span class="pill">ROI ${esc(String(x.roi||"?"))}/5</span><div style="font-weight:600">${esc(x.title||"")}</div></div>
     ${x.why?`<div class="sm" style="margin-top:6px">${esc(x.why)}</div>`:""}
     ${tchips?`<div class="row sm" style="gap:6px;margin-top:7px;flex-wrap:wrap">${tchips}</div>`:""}
-    ${fchips?`<div class="row sm" style="gap:6px;margin-top:5px;flex-wrap:wrap">${fchips}</div>`:""}
+    ${frows?`<div style="margin-top:6px">${frows}</div>`:""}
     <div class="btnrow" style="margin-top:10px"><button class="sm primary" data-act="topicSuggest" data-i="${idx}" ${learnBusy?"disabled":""}>✦ Get learning suggestions →</button></div>
   </div>`;
 }
@@ -1195,9 +1196,9 @@ function viewLearn(){
       <button class="primary" data-act="suggestLearn" ${canAI&&!learnBusy?"":"disabled"}>${learnBusy?"◌ thinking…":"✦ Suggest (whole life)"}</button>
       ${canAI?"":`<p class="faint sm" style="margin-top:6px">Needs the Mini + API key.</p>`}
     </div>
-    ${batches.length?`<div class="row" style="gap:8px;margin:12px 2px 8px">
-      <select onchange="learnTopicSelect(this.value)" style="flex:0 0 auto">${[`<option value="">All topics</option>`].concat(topics.map(t=>`<option value="${esc(t)}" ${learnTopicFilter===t?"selected":""}>🎯 ${esc(t.slice(0,30))}</option>`)).join("")}</select>
-      <input id="learnSearchBox" class="grow" placeholder="filter…" value="${esc(learnSearch)}" oninput="learnSearchInput(this.value)"/>
+    ${batches.length?`<div style="margin:12px 2px 8px">
+      ${topics.length?`<select onchange="learnTopicSelect(this.value)" style="width:100%;box-sizing:border-box;margin-bottom:8px">${[`<option value="">All topics</option>`].concat(topics.map(t=>`<option value="${esc(t)}" ${learnTopicFilter===t?"selected":""}>🎯 ${esc(t.slice(0,40))}</option>`)).join("")}</select>`:""}
+      <input id="learnSearchBox" placeholder="filter by title or topic…" value="${esc(learnSearch)}" oninput="learnSearchInput(this.value)" style="width:100%;box-sizing:border-box"/>
     </div>`:""}
     ${shown.length? shown.map(learnBatchChip).join("") : (batches.length?`<div class="muted sm">No batches match.</div>`:`<div class="muted sm" style="margin-top:6px">No suggestion batches yet. Generate a whole-life set above, or pick a blocker.</div>`)}
     `;

@@ -1,7 +1,7 @@
 /* Loom service worker — keep the app openable offline; never cache data.
    Navigations are network-first (always load the latest app when the Mini is
    reachable; fall back to cache only when offline). Other assets: SWR. */
-const CACHE = "loom-shell-v21";
+const CACHE = "loom-shell-v22";
 const SHELL = ["./", "./index.html", "./sw.js", "./docs/workflow.svg"];
 
 self.addEventListener("install", e => {
