@@ -20,6 +20,7 @@ const DATA_DIR = path.join(os.homedir(), ".loom");
 const DATA_FILE = path.join(DATA_DIR, "data.json");
 const TOKEN_FILE = path.join(DATA_DIR, "token");
 const AUDIO_DIR = path.join(DATA_DIR, "audio");
+const IMAGE_DIR = path.join(DATA_DIR, "images");
 // Transcription via MLX Whisper (medium), sharing the model already cached for
 // the other project — no duplicate model. mlx_whisper decodes audio via ffmpeg.
 const PY = process.env.LOOM_PY || path.join(DATA_DIR, "venv", "bin", "python");
@@ -207,6 +208,7 @@ const BIN_PATH = "/opt/homebrew/bin:" + (process.env.PATH || "");  // so mlx_whi
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(AUDIO_DIR, { recursive: true });
+fs.mkdirSync(IMAGE_DIR, { recursive: true });
 
 // token: load or create
 let TOKEN;
@@ -405,6 +407,18 @@ const server = http.createServer((req, res) => {
       send(res, 200, buf, ct);
     });
   }
+  if (urlPath.startsWith("/image/") && req.method === "GET") {   // serve one image for in-app viewing (<img> uses ?t= token)
+    if (!authedAny()) return send(res, 401, "unauthorized");
+    const name = path.basename(urlPath.slice(7));
+    const f = path.join(IMAGE_DIR, name);
+    if (!f.startsWith(IMAGE_DIR + path.sep)) return send(res, 403, "no");
+    return fs.readFile(f, (e, buf) => {
+      if (e) return send(res, 404, "not found");
+      const ct = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".heic": "image/heic" }[path.extname(f).toLowerCase()] || "application/octet-stream";
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      send(res, 200, buf, ct);
+    });
+  }
   if (urlPath.startsWith("/audio/") && urlPath !== "/audio/stats" && req.method === "DELETE") {
     if (!authed(req)) return send(res, 401, "unauthorized");
     const name = path.basename(urlPath.slice(7));   // one file, no traversal
@@ -442,7 +456,7 @@ const server = http.createServer((req, res) => {
     const ext = path.extname(full).toLowerCase();
     if (ext === ".html") {
       // inject sync config so the app on the tailnet just works, no token typing
-      const cfg = `<script>window.LOOM_SYNC=${JSON.stringify({ token: TOKEN, url: BASE + "/data", sw: BASE + "/sw.js", scope: BASE + "/", transcribe: BASE + "/transcribe", audio: BASE + "/audio", summarize: BASE + "/summarize", plan: anthKey() ? BASE + "/plan" : null, learn: anthKey() ? BASE + "/learn" : null, blockers: anthKey() ? BASE + "/blockers" : null, version: BASE + "/version", ver: appVersion() })};</script>`;
+      const cfg = `<script>window.LOOM_SYNC=${JSON.stringify({ token: TOKEN, url: BASE + "/data", sw: BASE + "/sw.js", scope: BASE + "/", transcribe: BASE + "/transcribe", audio: BASE + "/audio", summarize: BASE + "/summarize", plan: anthKey() ? BASE + "/plan" : null, learn: anthKey() ? BASE + "/learn" : null, blockers: anthKey() ? BASE + "/blockers" : null, image: BASE + "/image", version: BASE + "/version", ver: appVersion() })};</script>`;
       const html = buf.toString("utf8").replace("<!--LOOM_CONFIG-->", cfg);
       res.setHeader("Cache-Control", "no-cache");
       return send(res, 200, html, TYPES[".html"]);
