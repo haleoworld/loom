@@ -489,7 +489,7 @@ setInterval(() => {
         if (!r || !Array.isArray(r.days) || !r.days.includes(now.getDay())) continue;
         if (r.until && now.getTime() > r.until) continue;
         const p = String(r.time || "09:00").split(":"); const rmin = (+p[0]) * 60 + (+p[1] || 0);
-        if (cur < rmin) continue;                                   // not yet time today
+        if (cur < rmin || cur > rmin + 180) continue;               // fire only within a 3h window after the scheduled time — never "catch up" hours late (e.g. a 09:00 reminder created at 8pm should wait for next morning, not blast at night)
         const key = task.id + ":" + (r.time || "") + ":" + (r.days || []).join("");  // stable across id churn
         if (st.remSent[key] === today) continue;                    // already sent today
         st.remSent[key] = today; changed = true;
