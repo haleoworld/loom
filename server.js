@@ -483,11 +483,16 @@ setInterval(() => {
   try {
     const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
     const cur = h * 60 + m; st.remSent = st.remSent || {}; let changed = false; const fired = [];
+    const midnight = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
     for (const task of (data.tasks || [])) {
       if (task.done || !Array.isArray(task.reminders)) continue;
       for (const r of task.reminders) {
         if (!r || !Array.isArray(r.days) || !r.days.includes(now.getDay())) continue;
         if (r.until && now.getTime() > r.until) continue;
+        if (r.everyN > 1 && r.anchor) {                             // N-weekly (e.g. biweekly garbage): fire only on in-phase weeks measured from the anchor date; weekly reminders (no everyN) are unaffected
+          const weeks = Math.round((midnight(now) - midnight(r.anchor)) / (7 * 86400000));
+          if (((weeks % r.everyN) + r.everyN) % r.everyN !== 0) continue;
+        }
         const p = String(r.time || "09:00").split(":"); const rmin = (+p[0]) * 60 + (+p[1] || 0);
         if (cur < rmin || cur > rmin + 180) continue;               // fire only within a 3h window after the scheduled time — never "catch up" hours late (e.g. a 09:00 reminder created at 8pm should wait for next morning, not blast at night)
         const key = task.id + ":" + (r.time || "") + ":" + (r.days || []).join("");  // stable across id churn
